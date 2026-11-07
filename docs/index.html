@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeepTrack — family investment tracker</title>
+  <meta name="description" content="A calm, shared view of your family's equity, debt and other investments. Google sign-in limited to approved accounts.">
+  <meta name="app-url" content="https://replace-with-your-app-url.example.com">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --brand: #4f46e5;
+      --brand-2: #7c3aed;
+      --ink: #0f172a;
+      --muted: #5b6478;
+      --surface: #ffffff;
+      --line: #e4e7ef;
+      --soft: #f5f6fb;
+      --ok: #0f9f6e;
+      --font: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: var(--font); color: var(--ink);
+      background:
+        radial-gradient(1100px 600px at 85% -10%, rgba(124, 58, 237, 0.16), transparent 60%),
+        radial-gradient(900px 500px at 0% 0%, rgba(79, 70, 229, 0.14), transparent 55%),
+        var(--soft);
+      min-height: 100vh;
+    }
+    .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 26px 0; }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: -0.03em; font-size: 18px; color: var(--ink); text-decoration: none; }
+    .brand img { width: 34px; height: 34px; }
+    .top-link { font-size: 13px; font-weight: 700; color: var(--brand); text-decoration: none; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); gap: 56px; align-items: center; padding: 54px 0 40px; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(79, 70, 229, 0.09); color: var(--brand);
+      border: 1px solid rgba(79, 70, 229, 0.18);
+      padding: 7px 12px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em;
+    }
+    h1 { font-size: clamp(36px, 5.2vw, 60px); line-height: 1.02; letter-spacing: -0.045em; margin: 20px 0 16px; font-weight: 800; }
+    h1 em { font-style: normal; background: linear-gradient(120deg, var(--brand), var(--brand-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lede { font-size: 16px; line-height: 1.65; color: var(--muted); max-width: 48ch; margin: 0 0 28px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      border-radius: 12px; padding: 14px 20px;
+      font-family: inherit; font-size: 14px; font-weight: 700;
+      text-decoration: none; border: 1px solid transparent; cursor: pointer;
+    }
+    .btn-primary { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; box-shadow: 0 14px 28px -14px rgba(79, 70, 229, 0.7); }
+    .btn-primary:hover { filter: brightness(1.05); }
+    .btn-ghost { background: var(--surface); color: var(--ink); border-color: var(--line); }
+    .note { display: flex; align-items: center; gap: 9px; margin-top: 18px; font-size: 12.5px; color: var(--muted); }
+    .note svg { flex: none; color: var(--ok); }
+    .card-art {
+      background: linear-gradient(160deg, #171a35, #241b4d 55%, #3b1d63);
+      border-radius: 24px; padding: 26px; color: #fff;
+      box-shadow: 0 34px 70px -34px rgba(23, 26, 53, 0.85);
+      position: relative; overflow: hidden;
+    }
+    .card-art::after {
+      content: ""; position: absolute; width: 220px; height: 220px; right: -70px; bottom: -80px;
+      border-radius: 50%; border: 1px dashed rgba(255, 255, 255, 0.22);
+    }
+    .card-art .label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); font-weight: 700; }
+    .card-art .value { font-size: 34px; font-weight: 800; letter-spacing: -0.04em; margin: 6px 0 2px; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; background: rgba(15, 159, 110, 0.18); color: #6ee7b7; }
+    .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; position: relative; z-index: 1; }
+    .mini { background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; padding: 13px 14px; }
+    .mini span { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.5); font-weight: 700; }
+    .mini strong { display: block; font-size: 17px; margin-top: 4px; letter-spacing: -0.02em; }
+    .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 34px 0 56px; }
+    .feature { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+    .feature .dot { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: rgba(79, 70, 229, 0.1); color: var(--brand); margin-bottom: 12px; }
+    .feature h3 { font-size: 13.5px; margin: 0 0 5px; letter-spacing: -0.01em; }
+    .feature p { font-size: 12.5px; line-height: 1.55; color: var(--muted); margin: 0; }
+    footer { border-top: 1px solid var(--line); padding: 22px 0 30px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; gap: 34px; padding-top: 30px; }
+      .features { grid-template-columns: 1fr 1fr; }
+      .card-art { max-width: 520px; }
+    }
+    @media (max-width: 560px) {
+      .features { grid-template-columns: 1fr; }
+      .top-link { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="./">
+        <img src="favicon.svg" alt="">
+        <span>DeepTrack</span>
+      </a>
+      <a class="top-link" data-app-link href="#">Open the app →</a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <span class="eyebrow">Private family workspace</span>
+          <h1>Every rupee,<br><em>one calm view.</em></h1>
+          <p class="lede">
+            A shared ledger for your family's equity, debt and everything else you own —
+            SIPs and stocks to FDs, gold, property and crypto. Admins edit, viewers browse,
+            and nobody else gets in.
+          </p>
+          <div class="cta">
+            <a class="btn btn-primary" data-app-link href="#">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>
+              </svg>
+              Open DeepTrack
+            </a>
+            <a class="btn btn-ghost" href="#access">Who can sign in?</a>
+          </div>
+          <p class="note">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+            Sign in with Google. Access is limited to approved accounts.
+          </p>
+        </div>
+
+        <div class="card-art" aria-hidden="true">
+          <span class="label">Family portfolio</span>
+          <div class="value">₹2.62 Cr</div>
+          <span class="pill">▲ 31.4% unrealised</span>
+          <div class="mini-grid">
+            <div class="mini"><span>Equity</span><strong>₹1.48 Cr</strong></div>
+            <div class="mini"><span>Debt</span><strong>₹74.2 L</strong></div>
+            <div class="mini"><span>Gold</span><strong>₹18.6 L</strong></div>
+            <div class="mini"><span>Property</span><strong>₹21.0 L</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="features">
+        <article class="feature">
+          <div class="dot">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+          </div>
+          <h3>Admin and viewer roles</h3>
+          <p>One shared portfolio. Admins change holdings; viewers get a clean read-only view.</p>
+        </article>
+        <article class="feature">
+          <div class="dot">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8"/><path d="M17 7h5v5"/></svg>
+          </div>
+          <h3>Live NSE prices</h3>
+          <p>Upload the NSE equity list and bhavcopy, then refresh stock and ETF values in one click.</p>
+        </article>
+        <article class="feature">
+          <div class="dot">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+          </div>
+          <h3>Excel import and export</h3>
+          <p>Fourteen instrument tabs with dropdowns, validated previews and one-click backups.</p>
+        </article>
+        <article class="feature" id="access">
+          <div class="dot">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          </div>
+          <h3>Gmail allowlist</h3>
+          <p>Only Google accounts you list can sign in. The check runs on the server, not the browser.</p>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <span>DeepTrack — self-hosted, your data stays on your server.</span>
+      <span>Built for Indian families and small offices.</span>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var meta = document.querySelector('meta[name="app-url"]');
+      var url = meta ? meta.getAttribute('content') : '';
+      if (!url || url.indexOf('replace-with-your-app-url') !== -1) {
+        url = '#';
+        document.querySelectorAll('[data-app-link]').forEach(function (a) {
+          a.addEventListener('click', function (event) {
+            event.preventDefault();
+            alert('Set your deployed app URL in docs/index.html (meta name="app-url").');
+          });
+        });
+      }
+      document.querySelectorAll('[data-app-link]').forEach(function (a) { a.href = url; });
+    })();
+  </script>
+</body>
+</html>
