@@ -105,11 +105,16 @@ git push -u origin main
 
 ## 3. Host the Flask app
 
-GitHub Pages cannot run Flask or SQLite. Use a host with a persistent disk. **Render** is the least fiddly:
+GitHub Pages cannot run Flask or SQLite. Use a host with a persistent disk. **Render** is the least fiddly.
+
+**One-click option:** the repo contains `render.yaml`. On Render choose **New → Blueprint**, connect the repo, and it creates the web service with the persistent disk already mounted at `/var/data` and prompts for the Firebase values. Disks require a paid instance (Starter); the blueprint sets that plan.
+
+Manual setup:
 
 1. <https://render.com> → **New → Web Service** → connect the GitHub repo.
 2. Runtime **Python 3**, Build command:
    `pip install -r requirements.txt gunicorn`
+   (or runtime **Docker** to use the repo's Dockerfile, which already defaults the data directory to `/var/data`).
 3. Start command:
    `gunicorn --workers 1 --threads 8 --bind 0.0.0.0:$PORT run:app`
 4. Add a **Disk**: name `data`, mount path `/var/data`, size 1 GB (disks require a paid instance; free instances also sleep and lose the disk).
@@ -131,14 +136,112 @@ GitHub Pages cannot run Flask or SQLite. Use a host with a persistent disk. **Re
    Use **one worker only**: SQLite allows a single writer and every user must share the same database file.
 6. Deploy, then add the Render hostname to Firebase **Authorized domains**.
 
-**Fly.io** works the same way with a volume mounted at `/app/data`. **Cloud Run** is possible but its filesystem is ephemeral — mount a Cloud Storage bucket for `/app/data`, or the portfolio resets on every deploy.
+### Fix an existing service that loses data ("storage is not persistent")
 
-The Dockerfile in the repo can be used on any container host:
+If holdings disappear after a redeploy or restart, the database is sitting on the container's ephemeral filesystem instead of a disk. On the existing service at <https://dashboard.render.com>:
+
+1. Open the service → **Settings** → scroll to **Instance type** and upgrade to a paid plan (Starter or higher). Free instances cannot attach disks, and they also sleep and wipe the filesystem.
+2. **Settings → Disks → Add Disk**: name `data`, mount path `/var/data`, size 1 GB → save.
+3. **Environment**: set `DEEPTRACK_DATA_DIR=/var/data` and `DEEPTRACK_DB=/var/data/tracker.db` (add them if missing). Keep `DEEPTRACK_SECRET_KEY` set too, so sessions survive restarts.
+4. **Manual Deploy → Deploy latest commit**. In the deploy logs confirm the line `DeepTrack database: /var/data/tracker.db`. Or sign in and open **Import / export** — the banner at the top says **Stored in the cloud** when the disk is attached, and warns when the data is on temporary storage.
+5. Sign in and import your holdings. If they live on a local copy of DeepTrack, use **Import / export → Export portfolio** there first, then upload that workbook on the hosted site. Rows already saved carry a **Record ID**, so re-uploads skip anything still present and only add what is new. Afterwards use the hosted address on every device so the cloud copy stays the single source of truth.
+
+Data that was already wiped from the ephemeral filesystem cannot be recovered from Render — restore it from an **Export portfolio** workbook or your original import file.
+
+**Fly.io** works the same way with a volume mounted at `/var/data`. **Cloud Run** is possible but its filesystem is ephemeral — mount a Cloud Storage bucket for `/var/data`, or the portfolio resets on every deploy.
+
+The Dockerfile in the repo can be used on any container host (it defaults the data directory to `/var/data`):
 
 ```bash
 docker build -t deeptrack .
-docker run -p 8080:8080 -v "$PWD/data:/app/data" --env-file .env deeptrack
+docker run -p 8080:8080 -v "$PWD/data:/var/data" --env-file .env deeptrack
 ```
+
+---
+
+## Firebase cloud storage — data always lives in the cloud
+
+This is the recommended way to meet "the data must always live and be updated in the
+cloud." Instead of relying on a host's disk, DeepTrack writes the portfolio to **Firebase
+Firestore** after every change and reloads it on startup. The cloud copy is the source of
+truth, so it does not matter which machine runs the app — the data is always in Firestore.
+
+How it works:
+
+- SQLite stays the fast local query engine; nothing about the app's screens changes.
+- On startup, if Firestore already has the workspace, it is loaded into the app. The first
+  time you enable it, your existing local data is uploaded automatically.
+- After every successful add/edit/delete/import, the current members, holdings, demat
+  accounts and activity are written to Firestore.
+- Re-downloadable caches (NSE prices, IFSC lookups) stay local; they are not family data.
+- If Firebase is unreachable, the app keeps working locally and retries on the next change;
+  the **Import / export** banner shows the last sync error.
+
+You need the same Firebase project you use for Google sign-in (e.g. `deeptrack-aa1ff`).
+
+### Step 1 — Create the Firestore database
+
+1. Open <https://console.firebase.google.com/project/deeptrack-aa1ff/firestore>.
+2. Click **Create database** → choose **Native mode** → pick a location (e.g. `asia-south1`
+   Mumbai for India) → **Create**. (If a database already exists, skip this.)
+
+### Step 2 — Create a service-account key
+
+The server writes to Firestore with a service account (this is separate from the public
+web config used for sign-in).
+
+1. Open <https://console.firebase.google.com/project/deeptrack-aa1ff/settings/serviceaccounts/adminsdk>.
+2. Click **Generate new private key** → **Generate key**. A `.json` file downloads.
+3. Keep this file secret — it grants full access to the project's data. Never commit it or
+   put it in a ZIP. DeepTrack's `.gitignore`, `.dockerignore` and ZIP builder already exclude
+   `*serviceAccount*.json`, `*adminsdk*.json` and a `secrets/` folder.
+
+### Step 3 — Point the app at the key
+
+Set the project (already set for sign-in) plus **one** of the credential variables:
+
+```ini
+DEEPTRACK_FIREBASE_PROJECT=deeptrack-aa1ff
+# Local: path to the downloaded key file
+DEEPTRACK_FIREBASE_CREDENTIALS=C:\path\to\serviceAccount.json
+# Hosted (Render): paste the entire JSON on one line instead
+# DEEPTRACK_FIREBASE_CREDENTIALS_JSON={"type":"service_account","project_id":"deeptrack-aa1ff",...}
+```
+
+- **Local:** add the two lines to `.env` next to `run.py`, then restart.
+- **Render:** service → **Environment** → add `DEEPTRACK_FIREBASE_CREDENTIALS_JSON` with the
+  full JSON as the value (and confirm `DEEPTRACK_FIREBASE_PROJECT` is set). Save → redeploy.
+  With Firestore as the source of truth you no longer need a paid Render disk.
+
+### Step 4 — Lock down Firestore rules
+
+Only the server (service account) should read/write; block direct browser access. Open
+<https://console.firebase.google.com/project/deeptrack-aa1ff/firestore/rules> and publish:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+```
+
+The Admin SDK bypasses these rules, so the app keeps working while everyone else is denied.
+
+### Step 5 — Verify
+
+Restart the app and open **Import / export**. The banner should read **Stored in the
+Firebase cloud** with a last-synced time. Add a holding, then check
+<https://console.firebase.google.com/project/deeptrack-aa1ff/firestore/data> — a
+`deeptrack_sync` collection appears with `users`, `investments`, `demat_accounts`,
+`activity` and `meta` documents.
+
+> Run **one primary instance** against a given Firestore (e.g. the hosted app). If you also
+> run a local copy with the same credentials, both read/write the same cloud data and the
+> last change wins — fine for testing, but pick one place for day-to-day use.
 
 ---
 
@@ -168,4 +271,4 @@ Optional: add a custom domain under **Settings → Pages → Custom domain**.
 | Popup blocked | Browser blocks the sign-in window | Allow pop-ups for the site |
 | Signed in via Google but role is viewer | Not in `DEEPTRACK_ADMIN_EMAILS` | Add the email or promote in **Members** |
 | Login works, then "Please sign in" on refresh | Cookie not stored because `DEEPTRACK_HTTPS=1` on plain HTTP | Remove the flag locally; keep it on HTTPS hosts |
-| All data gone after redeploy | SQLite on an ephemeral filesystem | Mount a persistent disk at the data directory |
+| All data gone after redeploy | SQLite on an ephemeral filesystem | Follow "Fix an existing service that loses data" above: paid instance + disk at `/var/data` + `DEEPTRACK_DATA_DIR` |

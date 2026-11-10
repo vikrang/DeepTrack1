@@ -39,3 +39,32 @@ def secret_key() -> str:
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     IMPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _data_dir_mounted() -> bool:
+    """True when the data directory is a mounted disk/volume (Linux hosts)."""
+    try:
+        target = str(DATA_DIR.resolve())
+        with open("/proc/mounts", encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == target:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def storage_status() -> dict:
+    """Where the portfolio lives, and whether that spot survives a restart."""
+    path = str(DATABASE_PATH)
+    if os.name == "nt":
+        return {"mode": "local", "persistent": True, "path": path}
+    if _data_dir_mounted():
+        return {"mode": "cloud", "persistent": True, "path": path}
+    container = Path("/.dockerenv").exists() or bool(
+        os.environ.get("RENDER_SERVICE_ID") or os.environ.get("RENDER")
+    )
+    if container:
+        return {"mode": "temporary", "persistent": False, "path": path}
+    return {"mode": "local", "persistent": True, "path": path}

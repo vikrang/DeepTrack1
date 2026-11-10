@@ -1013,6 +1013,18 @@ def activity():
 # ---------------------------------------------------------------- excel
 
 
+@bp.get("/storage")
+@admin_required
+def storage_status():
+    from . import cloud
+    info = config.storage_status()
+    info["cloud"] = cloud.status()
+    if cloud.enabled():
+        info["mode"] = "firebase"
+        info["persistent"] = True
+    return jsonify(info)
+
+
 @bp.get("/template")
 @login_required
 def download_template():

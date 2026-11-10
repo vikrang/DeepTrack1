@@ -109,6 +109,7 @@ const state = {
   importResult: null,
   marketStatus: null,
   marketLoading: false,
+  storageStatus: null,
   selected: new Set(),
   modalResolver: null,
 };
@@ -2557,6 +2558,35 @@ async function updateMarketPrices() {
    Import / export
    ============================================================ */
 
+function storageCardHtml() {
+  const s = state.storageStatus;
+  if (!s) return "";
+  if (s.mode === "firebase") {
+    const err = s.cloud && s.cloud.last_error;
+    if (err) {
+      return `<div class="info-strip warn" style="margin-bottom:18px">${icon("alert")}
+        <span><strong>Firebase cloud is set up, but the last sync failed.</strong> Changes are saved locally and will retry on the next change. Check the service-account credentials and Firestore. <span class="mono">${esc(err)}</span></span>
+      </div>`;
+    }
+    return `<div class="info-strip ok" style="margin-bottom:18px">${icon("checkCircle")}
+      <span><strong>Stored in the Firebase cloud.</strong> Every change is written to Firestore, so the portfolio always lives in the cloud and is reachable from any device${s.cloud && s.cloud.synced_at ? ` · last synced <span class="mono">${esc(s.cloud.synced_at)}</span>` : ""}.</span>
+    </div>`;
+  }
+  if (s.mode === "cloud") {
+    return `<div class="info-strip ok" style="margin-bottom:18px">${icon("checkCircle")}
+      <span><strong>Stored in the cloud.</strong> The portfolio lives on this host's persistent disk (<span class="mono">${esc(s.path)}</span>) and survives restarts and redeployments. Everyone who signs in here sees the same data.</span>
+    </div>`;
+  }
+  if (s.mode === "temporary") {
+    return `<div class="info-strip warn" style="margin-bottom:18px">${icon("alert")}
+      <span><strong>Warning: this copy is not saved to the cloud.</strong> The host keeps the portfolio on temporary storage (<span class="mono">${esc(s.path)}</span>) that is wiped on every restart or redeploy. Attach a persistent disk at <span class="mono">/var/data</span> and set <span class="mono">DEEPTRACK_DATA_DIR=/var/data</span> — see the deployment guide in the repo.</span>
+    </div>`;
+  }
+  return `<div class="info-strip" style="margin-bottom:18px">${icon("info")}
+    <span><strong>Stored on this computer only.</strong> The portfolio lives in <span class="mono">${esc(s.path)}</span> on the machine running DeepTrack — it is not in the cloud. To keep it in the cloud, host the app (for example on Render with a persistent disk), then <strong>Export portfolio</strong> here and import that file on the hosted site.</span>
+  </div>`;
+}
+
 function renderImport() {
   if (!isAdmin()) {
     $("#view").innerHTML = `<div class="card card-pad"><div class="empty">
@@ -2574,6 +2604,8 @@ function renderImport() {
         <p>Bulk-load holdings from Excel, or take a snapshot of the portfolio.</p>
       </div>
     </div>
+
+    ${storageCardHtml()}
 
     ${state.importResult ? `
       <div class="import-result" style="margin-bottom:18px">
@@ -2638,6 +2670,13 @@ function renderImport() {
   `;
   hydrateIcons($("#view"));
   wireDropzone();
+
+  if (!state.storageStatus) {
+    api("/storage")
+      .then((data) => { state.storageStatus = data; })
+      .catch(() => {})
+      .finally(() => { if (state.view === "import") renderImport(); });
+  }
 }
 
 function wireDropzone() {
@@ -2845,6 +2884,7 @@ function bindGlobalEvents() {
     state.members = [];
     state.importPreview = null;
     state.marketStatus = null;
+    state.storageStatus = null;
     state.selected.clear();
     location.hash = "";
     showAuth("login");

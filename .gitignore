@@ -6,3 +6,9 @@ data/
 .env
 *.zip
 .DS_Store
+# Firebase service-account keys — never commit these
+secrets/
+*serviceAccount*.json
+*service-account*.json
+*adminsdk*.json
+firebase-credentials*.json

@@ -1011,7 +1011,7 @@ img { display: block; }
 .dl-item.wide { grid-column: span 2; }
 .dl-item .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
 .dl-item .v { font-size: 13px; font-weight: 600; margin-top: 3px; word-break: break-word; }
-.dl-item .v.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.03em; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.03em; }
 .section-label { font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 22px 0 6px; }
 .section-label:first-child { margin-top: 0; }
 

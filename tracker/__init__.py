@@ -10,6 +10,7 @@ from .db import close_db, init_db
 
 def create_app(test_config: dict | None = None) -> Flask:
     config.ensure_dirs()
+    print(f"DeepTrack database: {config.DATABASE_PATH}", flush=True)
     app = Flask(__name__, static_folder=str(config.STATIC_DIR), static_url_path="/static")
     app.config.update(
         SECRET_KEY=config.secret_key(),
@@ -28,6 +29,9 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     init_db(app)
     app.teardown_appcontext(close_db)
+
+    from . import cloud
+    cloud.setup(app)
 
     from .api import bp
 

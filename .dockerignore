@@ -8,3 +8,9 @@ docs/
 _test_firebase_auth.py
 .nse-test/
 .test-run/
+.env
+secrets/
+*serviceAccount*.json
+*service-account*.json
+*adminsdk*.json
+firebase-credentials*.json

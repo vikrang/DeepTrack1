@@ -2,6 +2,8 @@
 
 A small, self-hosted investment tracker for Indian families. Everyone in the workspace sees the same portfolio; admins can edit and viewers get read-only access.
 
+**New to DeepTrack? Read the [beginner user manual](docs/USER-MANUAL.md)** — every task explained step by step, from signing in to importing Excel and refreshing share prices.
+
 ## Quick start
 
 Requires Python 3.10 or newer.
@@ -110,6 +112,8 @@ Environment variables:
 | `DEEPTRACK_ALLOWED_EMAILS` | — | Comma-separated Google accounts allowed to sign in; sign-in stays off while empty |
 | `DEEPTRACK_ADMIN_EMAILS` | — | Subset of the allowlist that always gets the admin role |
 | `DEEPTRACK_PASSWORD_LOGIN` | on | Set `0` on hosted instances to allow Google sign-in only |
+| `DEEPTRACK_FIREBASE_CREDENTIALS` | — | Path to a Firebase service-account JSON key; enables cloud storage (Firestore) |
+| `DEEPTRACK_FIREBASE_CREDENTIALS_JSON` | — | Inline service-account JSON (alternative to the path above; used on Render) |
 
 ## Google sign-in and hosted access
 
@@ -134,16 +138,20 @@ If any of the Firebase variables are missing, sign-in is disabled and the app ke
 
 **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) is the step-by-step walkthrough** — Firebase console clicks, the exact `.env`, Render with a persistent disk, GitHub Pages, and a troubleshooting table.
 
+### Cloud storage — data always lives in the cloud (Firebase Firestore)
+
+Set `DEEPTRACK_FIREBASE_CREDENTIALS` (path to a service-account JSON key) or `DEEPTRACK_FIREBASE_CREDENTIALS_JSON` (the JSON itself) and the portfolio becomes cloud-backed: on start-up the app loads the cloud copy (uploading your local data the first time if the cloud is empty), and after every successful add/edit/delete/import it writes the change straight to Firestore. SQLite stays as a fast local working copy, so the app keeps working offline and the cloud remains the source of truth. This works the same on the family computer and on any host — with it configured you no longer need a paid persistent disk to avoid losing data. The **Import / export** banner reads *"Stored in the Firebase cloud"* and shows the last sync time (or a warning if a sync failed). Setup steps and console links: `docs/DEPLOYMENT.md` → *Firebase cloud storage*; end-user explanation: `docs/USER-MANUAL.md` → section 19. Keep the key file out of git — the ignore rules already exclude it.
+
 ### Hosting the app
 
 GitHub Pages cannot run this app: it only serves static files, while DeepTrack needs Python, SQLite, server sessions and NSE downloads. Run the Flask app on a host with a disk and point the GitHub Pages page at it.
 
 ```bash
 docker build -t deeptrack .
-docker run -p 8080:8080 -v "$PWD/data:/app/data" --env-file .env deeptrack
+docker run -p 8080:8080 -v "$PWD/data:/var/data" --env-file .env deeptrack
 ```
 
-Add `-e DEEPTRACK_HTTPS=1` when the container is served over HTTPS so session cookies are marked `Secure`. The image uses gunicorn with **one worker** because SQLite allows a single writer; keep one instance so all users share the same file. Render, Fly.io and Railway all support a persistent disk — mount it at `/app/data`. Cloud Run's filesystem is ephemeral unless you mount a storage bucket, so a redeploy there resets the portfolio.
+Add `-e DEEPTRACK_HTTPS=1` when the container is served over HTTPS so session cookies are marked `Secure`. The image uses gunicorn with **one worker** because SQLite allows a single writer; keep one instance so all users share the same file. The image stores the database in `/var/data` — on Render, Fly.io or Railway mount the persistent disk there (the repo's `render.yaml` blueprint creates a Render service with the disk already attached). **Render disks need a paid instance**: a free instance has an ephemeral filesystem, sleeps, and loses everything on redeploy. Cloud Run's filesystem is ephemeral unless you mount a storage bucket, so a redeploy there resets the portfolio. The startup log prints `DeepTrack database: <path>`, and the **Import / export** page shows a banner saying whether the portfolio is stored in the Firebase cloud, on this computer, on a cloud disk, or on temporary storage that will be wiped. To move holdings from a local copy to the cloud, export locally and import the workbook on the hosted site (Record IDs prevent duplicates).
 
 ### Publishing the landing page on GitHub Pages
 
@@ -171,6 +179,7 @@ tracker/            Flask app
   api.py            JSON API, auth, members, investments, import/export,
                     market data and bulk delete
   firebase.py       Firebase ID token verification and the email allowlist
+  cloud.py          Firestore cloud sync — portfolio always lives in the cloud
   market.py         NSE download, EQUITY_L/bhavcopy parsing, scrip search,
                     price refresh
   excelio.py        template generation, import parsing, export
@@ -181,6 +190,7 @@ tracker/            Flask app
 static/             no-build single-page frontend (HTML, CSS, ES modules)
 docs/               static landing page for GitHub Pages
 docs/DEPLOYMENT.md  Firebase + hosting + GitHub walkthrough
+docs/USER-MANUAL.md beginner task-by-task user manual
 Dockerfile          gunicorn image for hosted deployments
 .env.example        every setting, ready to copy to .env
 data/               created at runtime
