@@ -1,0 +1,37 @@
+# Render blueprint: creates the web service WITH a persistent disk.
+# Dashboard -> Blueprints -> New Blueprint Instance -> pick this repo.
+# Disks require a paid instance (Starter); free instances cannot attach one.
+services:
+  - type: web
+    name: deeptrack
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DEEPTRACK_DATA_DIR
+        value: /var/data
+      - key: DEEPTRACK_DB
+        value: /var/data/tracker.db
+      - key: DEEPTRACK_HTTPS
+        value: "1"
+      - key: DEEPTRACK_PASSWORD_LOGIN
+        value: "0"
+      - key: DEEPTRACK_SECRET_KEY
+        generateValue: true
+      - key: DEEPTRACK_FIREBASE_PROJECT
+        sync: false
+      - key: DEEPTRACK_FIREBASE_API_KEY
+        sync: false
+      - key: DEEPTRACK_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: DEEPTRACK_ALLOWED_EMAILS
+        sync: false
+      - key: DEEPTRACK_ADMIN_EMAILS
+        sync: false

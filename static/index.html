@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#4f46e5">
+  <title>DeepTrack — family investment tracker</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <div id="boot" class="boot" aria-live="polite">
+    <div class="boot-mark"><img src="/static/favicon.svg" alt="" width="44" height="44"></div>
+    <div class="boot-bar"><span></span></div>
+    <p class="muted">Opening your portfolio…</p>
+  </div>
+
+  <!-- ============================ Auth ============================ -->
+  <section id="auth" class="auth hidden">
+    <div class="auth-brand">
+      <div class="auth-brand-inner">
+        <div class="brand-lockup">
+          <img src="/static/favicon.svg" alt="" width="36" height="36">
+          <span>DeepTrack</span>
+        </div>
+        <h1>Every rupee,<br>one calm view.</h1>
+        <p class="auth-lede">A shared family ledger for equity, debt and everything else you own — from SIPs and FDs to gold, property and crypto.</p>
+        <ul class="auth-points">
+          <li><span class="tick">✓</span> Track 14 instrument types built for the Indian market</li>
+          <li><span class="tick">✓</span> Admin and viewer roles over one shared portfolio</li>
+          <li><span class="tick">✓</span> Bank details auto-filled from IFSC</li>
+          <li><span class="tick">✓</span> Bulk import from a dropdown-ready Excel template</li>
+        </ul>
+        <div class="auth-art" aria-hidden="true">
+          <div class="art-card art-a"><span class="muted">Portfolio value</span><strong>₹2.62 Cr</strong><span class="pill pill-ok">+31.4%</span></div>
+          <div class="art-card art-b"><span class="muted">Monthly SIP</span><strong>₹22,500</strong></div>
+          <div class="art-ring"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-panel">
+      <div class="auth-hero">
+        <figure class="auth-deity">
+          <img src="/static/img/mahalakshmi.webp"
+               srcset="/static/img/mahalakshmi-320.webp 320w, /static/img/mahalakshmi.webp 640w"
+               sizes="150px" width="640" height="640"
+               alt="Goddess Mahalakshmi seated on a lotus" fetchpriority="high">
+        </figure>
+        <p class="auth-sloka" lang="sa">ॐ श्रीं महालक्ष्म्यै नमः<span class="danda">||</span></p>
+      </div>
+      <form id="login-form" class="auth-card hidden" autocomplete="on" novalidate>
+        <h2 id="login-title">Welcome back</h2>
+        <p class="muted auth-sub" id="login-sub">Sign in to your family workspace.</p>
+        <div class="auth-oauth hidden" id="login-oauth">
+          <button class="btn btn-google btn-block btn-lg" type="button" data-google-signin>
+            <svg class="g-mark" viewBox="0 0 48 48" aria-hidden="true">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+            </svg>
+            Continue with Google
+          </button>
+          <div class="auth-or" data-or-password><span>or use your email</span></div>
+        </div>
+        <label class="field" data-password-field>
+          <span>Email address</span>
+          <input type="email" name="email" autocomplete="username" placeholder="you@example.com" required>
+        </label>
+        <label class="field" data-password-field>
+          <span>Password</span>
+          <span class="input-wrap">
+            <input type="password" name="password" autocomplete="current-password" placeholder="••••••••" required>
+            <button type="button" class="reveal" data-reveal aria-label="Show password">Show</button>
+          </span>
+        </label>
+        <div class="form-error hidden" id="login-error" role="alert"></div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-password-field>Sign in</button>
+        <p class="auth-foot muted" data-password-field>Access is managed by your workspace admin.</p>
+      </form>
+
+      <form id="setup-form" class="auth-card hidden" autocomplete="on" novalidate>
+        <span class="badge badge-brand">First-time setup</span>
+        <h2>Create your workspace</h2>
+        <p class="muted auth-sub">You will be the admin and can invite the rest of the family next.</p>
+        <label class="field">
+          <span>Your name</span>
+          <input type="text" name="name" autocomplete="name" placeholder="e.g. Ananya Sharma" required>
+        </label>
+        <label class="field">
+          <span>Email address</span>
+          <input type="email" name="email" autocomplete="email" placeholder="you@example.com" required>
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Password</span>
+            <input type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters" required>
+          </label>
+          <label class="field">
+            <span>Confirm password</span>
+            <input type="password" name="confirm" autocomplete="new-password" placeholder="Repeat password" required>
+          </label>
+        </div>
+        <div class="form-error hidden" id="setup-error" role="alert"></div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit">Create workspace</button>
+        <p class="auth-foot muted">Your data stays on this machine in a local SQLite file.</p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================ App ============================ -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#/dashboard">
+        <img src="/static/favicon.svg" alt="" width="34" height="34">
+        <span class="brand-name">DeepTrack</span>
+      </a>
+
+      <nav class="nav" aria-label="Main">
+        <a class="nav-item" href="#/dashboard" data-nav="dashboard">
+          <span class="nav-icon" data-icon="dashboard"></span><span>Dashboard</span>
+        </a>
+        <a class="nav-item" href="#/investments" data-nav="investments">
+          <span class="nav-icon" data-icon="wallet"></span><span>Investments</span>
+        </a>
+        <a class="nav-item" href="#/members" data-nav="members">
+          <span class="nav-icon" data-icon="users"></span><span>Members</span>
+        </a>
+        <a class="nav-item" href="#/masters" data-nav="masters">
+          <span class="nav-icon" data-icon="wallet"></span><span>Masters</span>
+        </a>
+        <a class="nav-item" href="#/market" data-nav="market" data-admin-only>
+          <span class="nav-icon" data-icon="market"></span><span>Market data</span>
+        </a>
+        <a class="nav-item" href="#/import" data-nav="import" data-admin-only>
+          <span class="nav-icon" data-icon="upload"></span><span>Import / export</span>
+        </a>
+        <a class="nav-item" href="#/profile" data-nav="profile">
+          <span class="nav-icon" data-icon="user"></span><span>My profile</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-note">
+        <div class="sidebar-note-title">Shared workspace</div>
+        <p>Everyone sees the same portfolio. Admins can edit; viewers get read-only access.</p>
+      </div>
+
+      <div class="sidebar-foot">
+        <button class="theme-toggle" id="theme-toggle" type="button">
+          <span class="theme-icon" data-icon="moon"></span>
+          <span class="theme-label">Dark mode</span>
+        </button>
+        <div class="user-chip" id="sidebar-user"></div>
+        <button class="btn btn-ghost btn-block" id="logout-btn" type="button">
+          <span data-icon="logout"></span> Sign out
+        </button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Open menu" data-icon="menu"></button>
+        <div class="topbar-heading">
+          <h1 id="page-title">Dashboard</h1>
+          <p id="page-sub" class="muted"></p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-primary btn-sm" id="quick-add" type="button">
+            <span data-icon="plus"></span> Add investment
+          </button>
+          <button class="avatar avatar-btn" id="topbar-user" type="button" aria-label="My profile"></button>
+        </div>
+      </header>
+
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+    <div class="scrim hidden" id="scrim"></div>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="drawer-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="false"></div>
+
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
