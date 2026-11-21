@@ -1246,18 +1246,28 @@ function investmentFormHtml(meta, existing) {
     ? `<span class="help">Filled from ${esc(sourceLabel)} above.</span>`
     : meta.derive
       ? `<span class="help">Auto-calculated from the details above. Type here to override.</span>`
-      : "";
+      : meta.key === "ppf"
+        ? `<span class="help">Auto-calculated as yearly contribution × years since the start date. Type here to override.</span>`
+        : "";
+
+  // Some types (mutual funds) name themselves only after the AMC/plan/option
+  // selectors are chosen, so the name input is rendered inside the details grid.
+  const inlineName = meta.name_after && meta.fields.some((f) => f.key === meta.name_after)
+    ? meta.name_after
+    : null;
+  const nameInputHtml = `
+          <label class="field span-2">
+            <span>${esc(meta.name_label || nameField.label || "Name")}<span class="req">*</span></span>
+            <input type="text" name="name" maxlength="160" placeholder="${esc(meta.name_placeholder || "")}" value="${esc(existing?.name || "")}">
+            <span class="err" data-err="name"></span>
+          </label>`;
 
   return `
     <form id="inv-investment-form" novalidate>
       <div class="form-section">
         <div class="form-section-head"><h4>Holding</h4><p>${esc(meta.blurb || "")}</p></div>
         <div class="grid-2">
-          <label class="field span-2">
-            <span>${esc(meta.name_label || nameField.label || "Name")}<span class="req">*</span></span>
-            <input type="text" name="name" maxlength="160" placeholder="${esc(meta.name_placeholder || "")}" value="${esc(existing?.name || "")}">
-            <span class="err" data-err="name"></span>
-          </label>
+          ${inlineName ? "" : nameInputHtml}
           <label class="field">
             <span>Owner<span class="req">*</span></span>
             <select name="owner_id">${ownerOptions}</select>
@@ -1274,7 +1284,7 @@ function investmentFormHtml(meta, existing) {
       <div class="form-section">
         <div class="form-section-head"><h4>${esc(meta.label)} details</h4><p>Fields marked * are required.</p></div>
         <div class="grid-2">
-          ${meta.fields.map((f) => renderFormField(f, details[f.key], ownerId)).join("")}
+          ${meta.fields.map((f) => renderFormField(f, details[f.key], ownerId) + (inlineName === f.key ? nameInputHtml : "")).join("")}
         </div>
       </div>
 
@@ -1316,7 +1326,7 @@ function renderFormField(field, value, ownerId) {
       : field.help
         ? `<span class="help">${esc(field.help)}</span>`
         : field.key === "symbol"
-          ? `<span class="help">Type 3+ letters to search NSE scrips</span>`
+          ? `<span class="help">Type 3+ letters to search NSE — stocks, ETFs and every other listed product</span>`
           : field.options_from
             ? `<span class="help">Manage demat accounts under Masters.</span>`
             : "";
@@ -1470,6 +1480,19 @@ function wireMaturityPreview(form, meta) {
   recalc();
 }
 
+// Yearly PPF deposits made from the start date through today (capped at 15 years).
+function ppfContributionYears(startStr) {
+  if (!startStr) return null;
+  const start = new Date(`${startStr}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const today = new Date();
+  let years = today.getFullYear() - start.getFullYear();
+  if (today.getMonth() < start.getMonth() || (today.getMonth() === start.getMonth() && today.getDate() < start.getDate())) {
+    years -= 1;
+  }
+  return Math.max(1, Math.min(15, years + 1));
+}
+
 function wireInvestmentForm(form, meta, existing) {
   if (!form) return;
   const touched = { invested: false, current: false };
@@ -1512,6 +1535,23 @@ function wireInvestmentForm(form, meta, existing) {
     if (!existing) recalc();
   }
 
+  if (meta.key === "ppf") {
+    const startEl = form.querySelector('[name="start_date"]');
+    const yearlyEl = form.querySelector('[name="yearly_contribution"]');
+    const totalEl = form.querySelector('[name="invested_amount"]');
+    if (startEl && yearlyEl && totalEl) {
+      const syncPpfTotal = () => {
+        if (touched.invested) return;
+        const years = ppfContributionYears(startEl.value);
+        const yearly = Number(yearlyEl.value);
+        if (years && Number.isFinite(yearly) && yearly > 0) totalEl.value = round2(years * yearly);
+      };
+      ["input", "change"].forEach((evt) => startEl.addEventListener(evt, syncPpfTotal));
+      yearlyEl.addEventListener("input", syncPpfTotal);
+      syncPpfTotal();
+    }
+  }
+
   form.querySelectorAll(".switch input").forEach((input) => {
     input.addEventListener("change", () => {
       const label = input.parentElement.querySelector(".switch-label");
@@ -1527,7 +1567,7 @@ function wireInvestmentForm(form, meta, existing) {
       dematSelect.innerHTML = dematOptionHtml(ownerSelect.value, dematSelect.value);
     });
   }
-  if (meta.key === "stocks" || meta.key === "etf") wireScripLookup(form, meta);
+  if (form.querySelector('[name="symbol"]')) wireScripLookup(form, meta);
 }
 
 function wireScripLookup(form, meta) {
@@ -1552,7 +1592,7 @@ function wireScripLookup(form, meta) {
     input.setAttribute("aria-expanded", "true");
     box.hidden = false;
     if (!items.length) {
-      box.innerHTML = `<div class="suggest-empty">No match — load NSE files under Market data.</div>`;
+      box.innerHTML = `<div class="suggest-empty">No match — NSE data is imported automatically under Market data.</div>`;
       return;
     }
     box.innerHTML = items.map((item, index) => `
@@ -2294,35 +2334,44 @@ function renderMarket() {
   }
   const s = state.marketStatus;
   const ready = Boolean(s && s.prices);
+  const equityDate = s?.equity_list_date ? fmtDate(s.equity_list_date) : null;
+  const bhavDate = s?.trade_date ? fmtDate(s.trade_date) : null;
 
   $("#view").innerHTML = `
     <div class="page-head">
       <div>
         <h2>Market data</h2>
-        <p>Load NSE files once, then refresh stock and ETF valuations with real closing prices.</p>
+        <p>The NSE equity list and bhavcopy are imported automatically — no file upload needed.</p>
       </div>
       <div class="page-actions">
         <button class="btn btn-secondary btn-sm" type="button" data-action="market-reload">${icon("refresh")} Refresh status</button>
+        <button class="btn btn-primary btn-sm" type="button" data-action="market-sync">${icon("download")} Sync from NSE</button>
         <button class="btn btn-primary btn-sm" type="button" data-action="update-prices" ${ready && s.matched ? "" : "disabled"}>
           ${icon("trendUp")} Update prices
         </button>
       </div>
     </div>
 
+    <div class="info-strip ok" style="margin-bottom:16px">${icon("calendar")}
+      <span><strong>Data in use —</strong>
+        NSE equity list: ${equityDate ? `as of ${equityDate}` : "not loaded yet"} ·
+        Bhavcopy prices: ${bhavDate ? `for ${bhavDate}` : "not loaded yet"}.</span>
+    </div>
+
     <div class="kpi-grid">
       <div class="kpi">
         <div class="kpi-label">${icon("list")} Scrips loaded</div>
         <div class="kpi-value">${s ? nf(0).format(s.scrips) : "—"}</div>
-        <div class="kpi-foot">${s?.equity_list_updated_at ? `Equity list ${timeAgo(s.equity_list_updated_at)}` : "Upload EQUITY_L.csv"}</div>
+        <div class="kpi-foot">${equityDate ? `Equity list as of ${equityDate}` : "Not imported yet"}</div>
       </div>
       <div class="kpi">
         <div class="kpi-label">${icon("market")} Price rows</div>
         <div class="kpi-value">${s ? nf(0).format(s.prices) : "—"}</div>
-        <div class="kpi-foot">${s?.bhavcopy_updated_at ? `Bhavcopy ${timeAgo(s.bhavcopy_updated_at)}` : "No bhavcopy yet"}</div>
+        <div class="kpi-foot">${bhavDate ? `Bhavcopy for ${bhavDate}` : "No bhavcopy yet"}</div>
       </div>
       <div class="kpi">
         <div class="kpi-label">${icon("calendar")} Last trade date</div>
-        <div class="kpi-value" style="font-size:22px">${s?.trade_date ? fmtDate(s.trade_date) : "—"}</div>
+        <div class="kpi-value" style="font-size:22px">${bhavDate || "—"}</div>
         <div class="kpi-foot">Closing prices in the database</div>
       </div>
       <div class="kpi">
@@ -2337,30 +2386,26 @@ function renderMarket() {
         <div class="step-card">
           <div class="step-num">1</div>
           <div style="flex:1;min-width:0">
-            <h4>Download from NSE</h4>
-            <p>The equity list powers the 3-letter scrip search. The bhavcopy carries the day's closing prices.</p>
-            <div class="actions">
-              <button class="btn btn-primary btn-sm" type="button" data-action="download-equity">${icon("download")} EQUITY_L.csv</button>
-            </div>
-            <div class="divider"></div>
+            <h4>Import from NSE automatically</h4>
+            <p>Downloads the equity master and the latest bhavcopy — stocks, ETFs and all other listed cash-market products — straight into DeepTrack. No upload needed.</p>
             <div class="download-row">
               <label class="field">
-                <span>Bhavcopy date</span>
-                <input type="date" id="bhav-date" value="${localISODate()}" max="${localISODate()}">
+                <span>Bhavcopy as-of date</span>
+                <input type="date" id="sync-bhav-date" value="${localISODate()}" max="${localISODate()}">
               </label>
-              <button class="btn btn-primary btn-sm" type="button" data-action="download-bhavcopy">${icon("download")} Bhavcopy</button>
+              <button class="btn btn-primary btn-sm" type="button" data-action="market-sync">${icon("download")} Sync now</button>
             </div>
-            <p style="margin-top:10px">NSE only publishes on trading days. If today is a holiday or the archive is unavailable, pick an earlier date.</p>
+            <p style="margin-top:10px">NSE publishes on trading days only. If today is a holiday, the app automatically uses the latest available day.</p>
           </div>
         </div>
       </section>
 
       <section class="card card-pad">
         <div class="step-card">
-          <div class="step-num">2</div>
+          <div class="step-num">?</div>
           <div style="flex:1;min-width:0">
-            <h4>Upload the files</h4>
-            <p>Drop either file here. The format is detected automatically, so upload the equity list and bhavcopy in any order.</p>
+            <h4>If the sync is blocked</h4>
+            <p>Some networks block NSE. Drop an EQUITY_L.csv or bhavcopy you already have — the format is detected automatically.</p>
             <div class="dropzone" id="market-dropzone" tabindex="0" role="button" aria-label="Upload NSE market data file">
               <div class="dz-icon">${icon("upload")}</div>
               <h4>Drop EQUITY_L.csv or bhavcopy</h4>
@@ -2386,11 +2431,11 @@ function renderMarket() {
         current price for ETFs) and the current value are recalculated from quantity. Invested amounts stay untouched.
       </p>
       ${s && !s.prices ? `<div class="info-strip warn" style="margin-top:14px">${icon("info")}
-        <span>No bhavcopy loaded yet. Download one above or upload a file you already have.</span></div>` : ""}
+        <span>No bhavcopy yet. Click <strong>Sync from NSE</strong> to import it.</span></div>` : ""}
       ${s && s.prices && !s.matched ? `<div class="info-strip warn" style="margin-top:14px">${icon("alert")}
         <span>No holdings match the loaded prices. Add stock or ETF holdings with NSE symbols, then try again.</span></div>` : ""}
       ${s && s.matched ? `<div class="info-strip ok" style="margin-top:14px">${icon("checkCircle")}
-        <span>${s.matched} holding${s.matched === 1 ? "" : "s"} can be revalued with the prices from ${s.trade_date ? fmtDate(s.trade_date) : "the latest bhavcopy"}.</span></div>` : ""}
+        <span>${s.matched} holding${s.matched === 1 ? "" : "s"} can be revalued with the prices from ${bhavDate || "the latest bhavcopy"}.</span></div>` : ""}
       <div class="actions" style="margin-top:16px">
         <button class="btn btn-primary btn-sm" type="button" data-action="update-prices" ${ready && s.matched ? "" : "disabled"}>
           ${icon("trendUp")} Update current prices
@@ -2469,39 +2514,30 @@ async function uploadMarketFile(file) {
   }
 }
 
-async function downloadMarketFile(kind) {
-  const isBhav = kind === "bhavcopy";
-  const button = isBhav
-    ? $('[data-action="download-bhavcopy"]')
-    : $('[data-action="download-equity"]');
-  const original = button?.innerHTML;
-  if (button) {
-    button.disabled = true;
-    button.innerHTML = `<span class="spinner"></span> Downloading…`;
-  }
-  const path = isBhav
-    ? `/api/market/download/bhavcopy?date=${encodeURIComponent($("#bhav-date")?.value || "")}`
-    : "/api/market/download/equity-list";
+async function syncMarket() {
+  const buttons = $$('[data-action="market-sync"]');
+  const originals = buttons.map((b) => b.innerHTML);
+  buttons.forEach((b) => {
+    b.disabled = true;
+    b.innerHTML = `<span class="spinner"></span> Syncing…`;
+  });
   try {
-    const response = await fetch(path, { credentials: "same-origin" });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.error || "The NSE download failed. Try a different date or upload the file manually.");
-    }
-    const blob = await response.blob();
-    const disposition = response.headers.get("content-disposition") || "";
-    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
-    const fallback = isBhav ? "bhavcopy.csv.zip" : "EQUITY_L.csv";
-    downloadBlob(blob, match ? decodeURIComponent(match[1]) : fallback);
-    const tradeDate = response.headers.get("X-Trade-Date");
-    toast(tradeDate ? `Bhavcopy for ${fmtDate(tradeDate)} downloaded` : "Equity list downloaded", "ok");
+    const day = $("#sync-bhav-date")?.value || "";
+    const data = await api("/market/sync", { method: "POST", body: { date: day } });
+    state.marketStatus = data.status;
+    const equity = data.result?.equity_list;
+    const bhav = data.result?.bhavcopy;
+    const parts = [];
+    if (equity) parts.push(`equity list (${nf(0).format(equity.symbols)} scrips)`);
+    if (bhav) parts.push(`bhavcopy for ${fmtDate(bhav.trade_date)} (${nf(0).format(bhav.symbols)} scrips)`);
+    toast(`Synced ${parts.join(" · ") || "NSE data"}`, "ok");
+    renderMarket();
   } catch (error) {
     toast(error.message, "error");
-  } finally {
-    if (button) {
-      button.disabled = false;
-      button.innerHTML = original;
-    }
+    buttons.forEach((b, i) => {
+      b.disabled = false;
+      b.innerHTML = originals[i];
+    });
   }
 }
 
@@ -2519,7 +2555,7 @@ async function reloadMarketStatus(announce = false) {
 async function updateMarketPrices() {
   const status = state.marketStatus;
   if (!status?.prices) {
-    toast("Upload a bhavcopy before updating prices", "warn");
+    toast("Sync NSE data before updating prices", "warn");
     return;
   }
   const ok = await confirmDialog({
@@ -3014,11 +3050,8 @@ async function handleClick(event) {
     case "market-reload":
       await reloadMarketStatus(true);
       break;
-    case "download-equity":
-      await downloadMarketFile("equity");
-      break;
-    case "download-bhavcopy":
-      await downloadMarketFile("bhavcopy");
+    case "market-sync":
+      await syncMarket();
       break;
     case "update-prices":
       await updateMarketPrices();

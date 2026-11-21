@@ -805,6 +805,32 @@ def market_refresh():
     return jsonify(result=result, status=market.status())
 
 
+@bp.post("/market/sync")
+@admin_required
+def market_sync():
+    actor = current_user()
+    raw = str((request.get_json(silent=True) or {}).get("date") or "").strip()
+    try:
+        day = date.fromisoformat(raw) if raw else date.today()
+    except ValueError:
+        return jsonify(error="Choose a valid date"), 400
+    if day > date.today():
+        return jsonify(error="Pick today or an earlier trading date"), 400
+    result = market.sync_nse(day)
+    equity = result.get("equity_list")
+    bhav = result.get("bhavcopy")
+    if not equity and not bhav:
+        message = "; ".join((result.get("errors") or {}).values()) or "Could not fetch NSE data"
+        return jsonify(error=message, result=result, status=market.status()), 502
+    parts = []
+    if equity:
+        parts.append(f"equity list ({equity['symbols']} scrips)")
+    if bhav:
+        parts.append(f"bhavcopy for {bhav['trade_date']} ({bhav['symbols']} scrips)")
+    db.log_activity(actor["id"], "imported", "Synced NSE data: " + ", ".join(parts), "market", None)
+    return jsonify(result=result, status=market.status())
+
+
 # ---------------------------------------------------------------- investments
 
 

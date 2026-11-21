@@ -33,9 +33,17 @@ def create_app(test_config: dict | None = None) -> Flask:
     from . import cloud
     cloud.setup(app)
 
+    from . import fields as fields_registry
+
+    with app.app_context():
+        if fields_registry.refresh_ppf_totals():
+            cloud.push_current()
+
     from .api import bp
 
     app.register_blueprint(bp)
+
+    _start_market_autosync(app, test_config)
 
     @app.get("/")
     def index():
@@ -75,3 +83,36 @@ def create_app(test_config: dict | None = None) -> Flask:
         return send_from_directory(config.STATIC_DIR, "index.html")
 
     return app
+
+
+def _start_market_autosync(app: Flask, test_config: dict | None) -> None:
+    """Pull fresh NSE data in the background on startup, if it has gone stale.
+
+    Best-effort and non-blocking: a network block or slow archive never delays
+    startup, and manual upload stays available in the Market data page.
+    """
+    if test_config and test_config.get("TESTING"):
+        return
+    import os
+
+    if (os.environ.get("DEEPTRACK_AUTO_MARKET") or "1").strip().lower() in {"0", "false", "no", "off"}:
+        return
+    import threading
+
+    from . import market
+
+    def _run() -> None:
+        with app.app_context():
+            try:
+                if not market.is_stale():
+                    return
+                summary = market.sync_nse()
+                errors = summary.get("errors") or {}
+                if errors:
+                    print(f"DeepTrack market auto-sync partial: {errors}", flush=True)
+                else:
+                    print("DeepTrack market auto-sync complete", flush=True)
+            except Exception as exc:  # noqa: BLE001 - never block startup on market data
+                print(f"DeepTrack market auto-sync skipped: {exc}", flush=True)
+
+    threading.Thread(target=_run, name="market-autosync", daemon=True).start()

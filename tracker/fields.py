@@ -5,6 +5,7 @@ the Excel template, so all four stay in sync.
 """
 
 import calendar
+import json
 import re
 from datetime import date, timedelta
 
@@ -160,6 +161,7 @@ _TYPES = [
         "blurb": "SIP and lump-sum folios with any AMC",
         "name_label": "Scheme name",
         "name_placeholder": "e.g. Parag Parikh Flexi Cap Fund",
+        "name_after": "option",
         "invested_label": "Amount invested",
         "value_label": "Current value",
         "derive": {"invested": ("units", "avg_nav"), "value": ("units", "current_nav")},
@@ -299,7 +301,8 @@ _TYPES = [
         "fields": [
             f("institution", "Bank / post office", "select", options=["India Post", *BANKS], required=True),
             f("account_no", "PPF account number", required=True),
-            f("yearly_contribution", "Yearly contribution", "number", unit="₹", table=True, min=0, max=150000),
+            f("yearly_contribution", "Yearly contribution", "number", unit="₹", table=True, min=0, max=150000,
+              help="Counted once per year from the start date to work out the total contributed."),
             f("interest_rate", "Interest rate", "number", unit="%", min=0, max=20),
         ],
     },
@@ -546,6 +549,65 @@ def _derive_values(type_meta: dict, details: dict) -> tuple:
         if isinstance(monthly, (int, float)) and months:
             invested = round(monthly * months, 2)
     return invested, value
+
+
+PPF_MAX_YEARS = 15
+
+
+def ppf_contribution_years(start_date, today=None):
+    """Number of yearly deposits made from the start date through today (max 15)."""
+    if not start_date:
+        return None
+    try:
+        start = date.fromisoformat(str(start_date))
+    except ValueError:
+        return None
+    today = today or date.today()
+    years = today.year - start.year
+    if (today.month, today.day) < (start.month, start.day):
+        years -= 1
+    return max(1, min(PPF_MAX_YEARS, years + 1))
+
+
+def ppf_total(start_date, yearly_contribution):
+    """Cumulative contributions: the yearly amount for each PPF year so far."""
+    years = ppf_contribution_years(start_date)
+    if years is None or not isinstance(yearly_contribution, (int, float)) or yearly_contribution <= 0:
+        return None
+    return round(yearly_contribution * years, 2)
+
+
+def refresh_ppf_totals() -> int:
+    """Roll auto-tracked PPF totals forward as each contribution year completes.
+
+    Only rows whose stored total still equals an earlier years × contribution
+    figure are touched, so a hand-typed total is never overwritten.
+    """
+    from . import db
+
+    updated = 0
+    rows = db.query("SELECT id, start_date, invested_amount, current_value, details FROM investments WHERE type = 'ppf'")
+    for row in rows:
+        try:
+            details = json.loads(row["details"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        years = ppf_contribution_years(row["start_date"])
+        yearly = details.get("yearly_contribution")
+        target = ppf_total(row["start_date"], yearly)
+        if years is None or target is None:
+            continue
+        stored = float(row["invested_amount"] or 0)
+        auto_tracked = any(abs(stored - yearly * k) < 0.01 for k in range(1, years))
+        if not auto_tracked or stored >= target:
+            continue
+        delta = round(target - stored, 2)
+        db.execute(
+            "UPDATE investments SET invested_amount = ?, current_value = ?, updated_at = ? WHERE id = ?",
+            (target, round(float(row["current_value"] or 0) + delta, 2), db.now(), row["id"]),
+        )
+        updated += 1
+    return updated
 
 
 MARKET_TYPES = {"stocks", "etf"}
@@ -897,6 +959,13 @@ def validate_investment(payload: dict) -> tuple[dict, dict]:
             details.pop("demat_id", None)
 
     derived_invested, derived_value = _derive_values(type_meta, details)
+    if type_key == "ppf":
+        ppf_amount = ppf_total(start_date, details.get("yearly_contribution"))
+        if ppf_amount is not None:
+            if derived_invested is None:
+                derived_invested = ppf_amount
+            if derived_value is None:
+                derived_value = ppf_amount
     try:
         invested = parse_number(payload.get("invested_amount"))
     except ValueError as exc:

@@ -475,23 +475,25 @@ confirm **Remove this demat account?**.
 *(Admins only.)* **Market data** — "NSE scrip master, bhavcopy and prices" — is what lets
 DeepTrack know today's share prices and autocomplete stock names.
 
-It's a three-step loop:
+It's automatic — you don't have to download or upload anything:
 
-1. **Download from NSE** — click **EQUITY_L.csv** (the list of every listed company) and
-   **Bhavcopy** (the day's closing prices). Pick the **Bhavcopy date** if you need a
-   specific day; weekends/holidays are skipped automatically. Both files download to your browser.
-2. **Upload the files** — drop the downloaded `.csv` / `.zip` onto **Drop EQUITY_L.csv or
-   bhavcopy**. DeepTrack recognises each file automatically.
+1. **Imported for you** — DeepTrack fetches the NSE **equity list** (every listed company)
+   and the latest **bhavcopy** (closing prices for equity shares, ETFs and every other listed
+   cash-market product) by itself: once when it starts, then whenever you click **Sync from NSE**.
+   Weekends/holidays are skipped automatically, and a **Bhavcopy as-of date** lets you request
+   an earlier trading day.
+2. **Check the dates** — the page always shows the **date the equity list was loaded** and the
+   **trade date of the bhavcopy in use**, so you know how fresh the prices are.
 3. **Update prices** — click **Update current prices**. For every stock/ETF with a matching
    symbol, it copies the closing price in and recalculates the current value. A toast tells
    you how many holdings updated and lists any symbols it couldn't find.
 
-Once this is loaded, the **Symbol** box in share/ETF forms becomes a search box — type 3+
-letters and pick a suggestion.
+Once the equity list is loaded, the **Symbol** box in share/ETF forms becomes a search box —
+type 3+ letters and pick a suggestion.
 
-> Do this once to set up, then repeat steps 1–3 whenever you want fresh prices (e.g. weekly).
-> If NSE blocks a download, the toast explains what to do — you can always download the file
-> yourself from NSE and upload it manually.
+> The import repeats on its own whenever the stored prices are more than 12 hours old, so you
+> usually only need **Update current prices** for fresh valuations. If NSE is blocked on your
+> network, the **If the sync is blocked** card lets you drop a file you downloaded yourself.
 
 ---
 

@@ -1,7 +1,10 @@
 """NSE market data: scrip master, bhavcopy ingestion, search and price refresh.
 
-Files are fetched from NSE's public archive or uploaded manually. Both the
-current UDiFF bhavcopy and the older ``cm*MMMYYYYbhav.csv`` layout are accepted.
+Data is pulled straight from NSE's public archive (see ``sync_nse``) so nothing
+has to be uploaded by hand, though a manual upload stays available as a fallback.
+The bhavcopy keeps the whole cash-market segment — equity shares, ETFs and other
+listed cash-market products — and both the current UDiFF layout and the older
+``cm*MMMYYYYbhav.csv`` layout are accepted.
 """
 
 import csv
@@ -9,7 +12,7 @@ import io
 import json
 import re
 import zipfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -32,6 +35,9 @@ LEGACY_URL = "https://nsearchives.nseindia.com/content/historical/EQUITIES/{year
 MAX_UNCOMPRESSED = 40 * 1024 * 1024
 SEARCH_MIN = 3
 STOCK_TYPES = ("stocks", "etf")
+CASH_SEGMENT = "CM"
+# Startup auto-sync treats the stored prices as stale once they are this old.
+STALE_HOURS = 12
 
 
 class MarketError(Exception):
@@ -263,11 +269,11 @@ def _ingest_bhavcopy(conn, rows, *, udiff: bool, ts):
     prices = {}
     for row in rows:
         if udiff:
+            # Keep the whole cash-market segment so equity shares (STK), ETFs and
+            # any other listed cash-market products are all captured. Derivatives,
+            # currency and commodity segments (FO, CD, COM) are skipped.
             segment = (row.get("SGMT") or "").upper()
-            instrument = (row.get("FININSTRMTP") or "").upper()
-            if segment and segment != "CM":
-                continue
-            if instrument and instrument != "STK":
+            if segment and segment != CASH_SEGMENT:
                 continue
             symbol = _text(row.get("TCKRSYMB"), 32)
             trade_date = _iso_date(row.get("TRADDT"))
@@ -439,9 +445,47 @@ def status() -> dict:
         "prices_updated_at": price_row["u"],
         "equity_list_updated_at": equity_updated,
         "bhavcopy_updated_at": bhav_updated,
+        # Dates the market data is "as of" (shown to the user):
+        "equity_list_date": (equity_updated or "")[:10] or None,
+        "bhavcopy_date": price_row["d"],
         "holdings": len(holdings),
         "matched": matched,
     }
+
+
+def is_stale() -> bool:
+    """True when nothing is stored or the newest prices are older than STALE_HOURS."""
+    row = db.query_one("SELECT COUNT(*) AS c, MAX(updated_at) AS u FROM market_prices")
+    if not row or not row["c"] or not row["u"]:
+        return True
+    try:
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(row["u"])
+    except ValueError:
+        return True
+    return age > timedelta(hours=STALE_HOURS)
+
+
+def sync_nse(day: date | None = None) -> dict:
+    """Fetch and store the NSE equity list and the latest bhavcopy — no upload needed.
+
+    The equity master and the bhavcopy are pulled straight from NSE's archive into
+    the database. The bhavcopy keeps the whole cash-market segment, so equity
+    shares, ETFs and any other listed cash-market products are all included. Each
+    dataset is independent: one failing (for example, a network block) does not
+    stop the other from being imported.
+    """
+    day = day or date.today()
+    result: dict = {"equity_list": None, "bhavcopy": None, "errors": {}}
+    try:
+        result["equity_list"] = ingest(fetch_equity_list(), "EQUITY_L.csv")
+    except (MarketError, ValueError) as exc:
+        result["errors"]["equity_list"] = str(exc)
+    try:
+        payload, filename, _actual = fetch_bhavcopy(day)
+        result["bhavcopy"] = ingest(payload, filename)
+    except (MarketError, ValueError) as exc:
+        result["errors"]["bhavcopy"] = str(exc)
+    return result
 
 
 def _as_number(value):
