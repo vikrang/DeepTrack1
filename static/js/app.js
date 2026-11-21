@@ -1249,6 +1249,9 @@ function investmentFormHtml(meta, existing) {
       : meta.key === "ppf"
         ? `<span class="help">Auto-calculated as yearly contribution × years since the start date. Type here to override.</span>`
         : "";
+  const valueHint = meta.key === "ppf"
+    ? `<span class="help">Contributions plus interest at the rate above, credited on 31 March each year. Type here to override.</span>`
+    : "";
 
   // Some types (mutual funds) name themselves only after the AMC/plan/option
   // selectors are chosen, so the name input is rendered inside the details grid.
@@ -1301,6 +1304,7 @@ function investmentFormHtml(meta, existing) {
             <span>${esc(meta.value_label || valueField.label)} (₹)</span>
             <span class="input-affix"><span class="affix">₹</span><input type="number" step="0.01" min="0" inputmode="decimal" name="current_value" value="${existing ? existing.current_value : ""}" placeholder="Same as invested if blank"></span>
             <span class="err" data-err="current_value"></span>
+            ${valueHint}
           </label>
         </div>
       </div>
@@ -1493,6 +1497,49 @@ function ppfContributionYears(startStr) {
   return Math.max(1, Math.min(15, years + 1));
 }
 
+// Monthly PPF interest at the given rate, credited on 31 March each year.
+// A deposit lands for interest in the month when paid by the 5th, otherwise
+// from the next month — the passbook rule.
+function ppfBalance(startStr, yearlyContribution, interestRate) {
+  if (!startStr) return null;
+  const start = new Date(`${startStr}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const yearly = Number(yearlyContribution);
+  if (!Number.isFinite(yearly) || yearly <= 0) return null;
+  const rate = Number(interestRate) > 0 ? Number(interestRate) : 0;
+  const today = new Date();
+  if (today < start) return null;
+
+  const deposits = new Map();
+  for (let k = 0; k < 15; k += 1) {
+    const d = new Date(start.getFullYear() + k, start.getMonth(), start.getDate());
+    if (d.getMonth() !== start.getMonth()) d.setDate(0);
+    if (d > today) break;
+    deposits.set(`${d.getFullYear()}-${d.getMonth()}`, d);
+  }
+
+  let balance = 0;
+  let fiscalInterest = 0;
+  let y = start.getFullYear();
+  let m = start.getMonth();
+  const todayY = today.getFullYear();
+  const todayM = today.getMonth();
+  while (y < todayY || (y === todayY && m <= todayM)) {
+    const completed = y < todayY || m < todayM;
+    const deposit = deposits.get(`${y}-${m}`);
+    if (deposit && deposit.getDate() <= 5) balance += yearly;
+    if (completed && rate) fiscalInterest += (balance * rate) / 1200;
+    if (deposit && deposit.getDate() > 5) balance += yearly;
+    if (completed && m === 2) {
+      balance += fiscalInterest;
+      fiscalInterest = 0;
+    }
+    m += 1;
+    if (m > 11) { m = 0; y += 1; }
+  }
+  return Math.round(balance * 100) / 100;
+}
+
 function wireInvestmentForm(form, meta, existing) {
   if (!form) return;
   const touched = { invested: false, current: false };
@@ -1538,17 +1585,22 @@ function wireInvestmentForm(form, meta, existing) {
   if (meta.key === "ppf") {
     const startEl = form.querySelector('[name="start_date"]');
     const yearlyEl = form.querySelector('[name="yearly_contribution"]');
-    const totalEl = form.querySelector('[name="invested_amount"]');
-    if (startEl && yearlyEl && totalEl) {
-      const syncPpfTotal = () => {
-        if (touched.invested) return;
+    const rateEl = form.querySelector('[name="interest_rate"]');
+    if (startEl && yearlyEl && invested) {
+      const syncPpf = () => {
         const years = ppfContributionYears(startEl.value);
         const yearly = Number(yearlyEl.value);
-        if (years && Number.isFinite(yearly) && yearly > 0) totalEl.value = round2(years * yearly);
+        if (!years || !Number.isFinite(yearly) || yearly <= 0) return;
+        if (!touched.invested) invested.value = round2(years * yearly);
+        if (!touched.current && current) {
+          const balance = ppfBalance(startEl.value, yearly, rateEl ? rateEl.value : 0);
+          if (balance !== null) current.value = round2(balance);
+        }
       };
-      ["input", "change"].forEach((evt) => startEl.addEventListener(evt, syncPpfTotal));
-      yearlyEl.addEventListener("input", syncPpfTotal);
-      syncPpfTotal();
+      [startEl, yearlyEl, rateEl].filter(Boolean).forEach((el) => {
+        ["input", "change"].forEach((evt) => el.addEventListener(evt, syncPpf));
+      });
+      if (!existing) syncPpf();
     }
   }
 

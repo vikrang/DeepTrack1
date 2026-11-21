@@ -244,7 +244,10 @@ the deposits over the months and computes maturity.
 
 **Bonds & G-Secs** — Enter **Issuer**, **Bond type**, **ISIN**, **Coupon rate** and **Maturity date**.
 
-**PPF** — Enter the **Account number** and **Yearly contribution**.
+**PPF** — Enter the **Account number**, **Yearly contribution** and **Interest rate**.
+> DeepTrack counts one contribution per year from the start date and adds interest at
+> that rate, credited on 31 March each year (a deposit paid after the 5th earns from the
+> next month, as in a passbook). Leave the amounts blank; type your own to override.
 
 **EPF / VPF** — Enter your **UAN** and the monthly contributions.
 

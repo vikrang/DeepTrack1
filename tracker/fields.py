@@ -303,7 +303,8 @@ _TYPES = [
             f("account_no", "PPF account number", required=True),
             f("yearly_contribution", "Yearly contribution", "number", unit="₹", table=True, min=0, max=150000,
               help="Counted once per year from the start date to work out the total contributed."),
-            f("interest_rate", "Interest rate", "number", unit="%", min=0, max=20),
+            f("interest_rate", "Interest rate", "number", unit="%", min=0, max=20,
+              help="Interest accrues monthly on the balance and is credited on 31 March each year."),
         ],
     },
     {
@@ -577,11 +578,65 @@ def ppf_total(start_date, yearly_contribution):
     return round(yearly_contribution * years, 2)
 
 
-def refresh_ppf_totals() -> int:
-    """Roll auto-tracked PPF totals forward as each contribution year completes.
+def _add_years(day: date, years: int) -> date:
+    try:
+        return day.replace(year=day.year + years)
+    except ValueError:  # 29 February in a non-leap year
+        return day.replace(year=day.year + years, day=28)
 
-    Only rows whose stored total still equals an earlier years × contribution
-    figure are touched, so a hand-typed total is never overwritten.
+
+def ppf_balance(start_date, yearly_contribution, interest_rate, today=None):
+    """Balance after monthly interest at the given rate, credited every 31 March.
+
+    A deposit counts for the month when it lands on or before the 5th; later
+    deposits start earning from the following month, as in a PPF passbook.
+    Interest since the last 31 March stays uncredited, exactly like the bank.
+    """
+    if not start_date:
+        return None
+    try:
+        start = date.fromisoformat(str(start_date))
+    except ValueError:
+        return None
+    if not isinstance(yearly_contribution, (int, float)) or yearly_contribution <= 0:
+        return None
+    today = today or date.today()
+    if today < start:
+        return None
+    rate = interest_rate if isinstance(interest_rate, (int, float)) and interest_rate > 0 else 0.0
+
+    deposits = {}
+    for k in range(PPF_MAX_YEARS):
+        day = _add_years(start, k)
+        if day > today:
+            break
+        deposits[(day.year, day.month)] = day
+
+    balance = 0.0
+    fiscal_interest = 0.0
+    year, month = start.year, start.month
+    while (year, month) <= (today.year, today.month):
+        completed = (year, month) < (today.year, today.month)
+        deposit = deposits.get((year, month))
+        if deposit and deposit.day <= 5:
+            balance += yearly_contribution
+        if completed and rate:
+            fiscal_interest += balance * rate / 1200
+        if deposit and deposit.day > 5:
+            balance += yearly_contribution
+        if completed and month == 3:
+            balance += fiscal_interest
+            fiscal_interest = 0.0
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return round(balance, 2)
+
+
+def refresh_ppf_totals() -> int:
+    """Recompute principal and interest for auto-tracked PPF rows.
+
+    A row is auto-tracked when the app filled its amounts (details["ppf_auto"],
+    or a legacy row whose stored total still equals years × contribution).
+    Hand-typed principal or balance figures are never overwritten.
     """
     from . import db
 
@@ -594,17 +649,29 @@ def refresh_ppf_totals() -> int:
             continue
         years = ppf_contribution_years(row["start_date"])
         yearly = details.get("yearly_contribution")
-        target = ppf_total(row["start_date"], yearly)
-        if years is None or target is None:
+        principal = ppf_total(row["start_date"], yearly)
+        balance = ppf_balance(row["start_date"], yearly, details.get("interest_rate"))
+        if years is None or principal is None or balance is None:
             continue
-        stored = float(row["invested_amount"] or 0)
-        auto_tracked = any(abs(stored - yearly * k) < 0.01 for k in range(1, years))
-        if not auto_tracked or stored >= target:
+        auto = details.get("ppf_auto")
+        if auto is None:
+            stored = float(row["invested_amount"] or 0)
+            auto = (
+                any(abs(stored - yearly * k) < 0.01 for k in range(1, years + 1))
+                and abs(float(row["current_value"] or 0) - stored) < 0.01
+            )
+            if auto:
+                details["ppf_auto"] = True
+        if not auto:
             continue
-        delta = round(target - stored, 2)
+        if (
+            abs(float(row["invested_amount"] or 0) - principal) < 0.01
+            and abs(float(row["current_value"] or 0) - balance) < 0.01
+        ):
+            continue
         db.execute(
-            "UPDATE investments SET invested_amount = ?, current_value = ?, updated_at = ? WHERE id = ?",
-            (target, round(float(row["current_value"] or 0) + delta, 2), db.now(), row["id"]),
+            "UPDATE investments SET invested_amount = ?, current_value = ?, details = ?, updated_at = ? WHERE id = ?",
+            (principal, balance, json.dumps(details, ensure_ascii=False), db.now(), row["id"]),
         )
         updated += 1
     return updated
@@ -959,13 +1026,15 @@ def validate_investment(payload: dict) -> tuple[dict, dict]:
             details.pop("demat_id", None)
 
     derived_invested, derived_value = _derive_values(type_meta, details)
+    ppf_principal = ppf_value = None
     if type_key == "ppf":
-        ppf_amount = ppf_total(start_date, details.get("yearly_contribution"))
-        if ppf_amount is not None:
+        ppf_principal = ppf_total(start_date, details.get("yearly_contribution"))
+        ppf_value = ppf_balance(start_date, details.get("yearly_contribution"), details.get("interest_rate"))
+        if ppf_principal is not None:
             if derived_invested is None:
-                derived_invested = ppf_amount
+                derived_invested = ppf_principal
             if derived_value is None:
-                derived_value = ppf_amount
+                derived_value = ppf_value
     try:
         invested = parse_number(payload.get("invested_amount"))
     except ValueError as exc:
@@ -997,6 +1066,16 @@ def validate_investment(payload: dict) -> tuple[dict, dict]:
         errors["invested_amount"] = "Amount cannot be negative"
     if current is not None and current < 0:
         errors["current_value"] = "Value cannot be negative"
+
+    if type_key == "ppf" and ppf_principal is not None and not errors:
+        # Track the row only while its figures are the ones this app derives.
+        details["ppf_auto"] = bool(
+            invested is not None
+            and abs(invested - ppf_principal) < 0.01
+            and (ppf_value is None or current is None or abs(current - ppf_value) < 0.01)
+        )
+    elif type_key == "ppf":
+        details.pop("ppf_auto", None)
 
     data = {
         "owner_id": owner_id,
