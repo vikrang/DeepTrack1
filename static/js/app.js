@@ -1106,6 +1106,7 @@ function openInvestmentDrawer(id) {
         <div class="dl-item"><div class="k">Record ID</div><div class="v mono">${esc(item.public_id || "—")}</div></div>
         <div class="dl-item wide"><div class="k">Last updated</div><div class="v">${timeAgo(item.updated_at)}</div></div>
       </div>
+      ${item.type === "ppf" ? ppfLedgerHtml(item) : ""}
     </div>
     <div class="drawer-foot">
       ${admin ? `
@@ -1247,7 +1248,7 @@ function investmentFormHtml(meta, existing) {
     : meta.derive
       ? `<span class="help">Auto-calculated from the details above. Type here to override.</span>`
       : meta.key === "ppf"
-        ? `<span class="help">Auto-calculated as yearly contribution × years since the start date. Type here to override.</span>`
+        ? `<span class="help">Auto-calculated from the contribution list below. Type here to override.</span>`
         : "";
   const valueHint = meta.key === "ppf"
     ? `<span class="help">Contributions plus interest at the rate above, credited on 31 March each year. Type here to override.</span>`
@@ -1308,6 +1309,14 @@ function investmentFormHtml(meta, existing) {
           </label>
         </div>
       </div>
+      ${meta.key === "ppf" ? `
+      <div class="form-section">
+        <div class="form-section-head"><h4>Contributions</h4><p>Each deposit earns interest from the month it lands; paid after the 5th, from the next month.</p></div>
+        <div id="ppf-rows" class="ppf-rows"></div>
+        <button class="btn btn-secondary btn-sm" type="button" id="ppf-add-row">${icon("plus")} Add contribution</button>
+        <input type="hidden" name="transactions">
+        <span class="err" data-err="transactions"></span>
+      </div>` : ""}
     </form>`;
 }
 
@@ -1484,41 +1493,67 @@ function wireMaturityPreview(form, meta) {
   recalc();
 }
 
-// Yearly PPF deposits made from the start date through today (capped at 15 years).
-function ppfContributionYears(startStr) {
-  if (!startStr) return null;
-  const start = new Date(`${startStr}T00:00:00`);
-  if (Number.isNaN(start.getTime())) return null;
-  const today = new Date();
-  let years = today.getFullYear() - start.getFullYear();
-  if (today.getMonth() < start.getMonth() || (today.getMonth() === start.getMonth() && today.getDate() < start.getDate())) {
-    years -= 1;
-  }
-  return Math.max(1, Math.min(15, years + 1));
+function isoDay(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-// Monthly PPF interest at the given rate, credited on 31 March each year.
-// A deposit lands for interest in the month when paid by the 5th, otherwise
-// from the next month — the passbook rule.
-function ppfBalance(startStr, yearlyContribution, interestRate) {
-  if (!startStr) return null;
+// One deposit per year on the start-date anniversary, capped at 15 years.
+function ppfRowsFromSchedule(startStr, yearlyContribution) {
+  if (!startStr) return [];
   const start = new Date(`${startStr}T00:00:00`);
-  if (Number.isNaN(start.getTime())) return null;
+  if (Number.isNaN(start.getTime())) return [];
   const yearly = Number(yearlyContribution);
-  if (!Number.isFinite(yearly) || yearly <= 0) return null;
-  const rate = Number(interestRate) > 0 ? Number(interestRate) : 0;
+  if (!Number.isFinite(yearly) || yearly <= 0) return [];
   const today = new Date();
-  if (today < start) return null;
-
-  const deposits = new Map();
+  today.setHours(0, 0, 0, 0);
+  if (start > today) return [];
+  const rows = [];
   for (let k = 0; k < 15; k += 1) {
     const d = new Date(start.getFullYear() + k, start.getMonth(), start.getDate());
     if (d.getMonth() !== start.getMonth()) d.setDate(0);
     if (d > today) break;
-    deposits.set(`${d.getFullYear()}-${d.getMonth()}`, d);
+    rows.push({ date: isoDay(d), amount: yearly });
+  }
+  return rows;
+}
+
+// Date-wise PPF ledger: deposits plus interest credited on 31 March each year.
+// A deposit earns from the month it lands when paid by the 5th, otherwise from
+// the next month — the passbook rule. Without explicit transactions the yearly
+// schedule stands in, so older holdings keep working.
+function ppfLedger(startStr, yearlyContribution, interestRate, transactions) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let deposits;
+  let start;
+  if (Array.isArray(transactions)) {
+    deposits = transactions
+      .map((t) => ({ date: new Date(`${String(t.date).slice(0, 10)}T00:00:00`), amount: Number(t.amount) }))
+      .filter((t) => !Number.isNaN(t.date.getTime()) && Number.isFinite(t.amount) && t.amount > 0 && t.date <= today)
+      .sort((a, b) => a.date - b.date);
+    if (!deposits.length) return { events: [], principal: 0, interest: 0, balance: 0 };
+    start = deposits[0].date;
+  } else {
+    const rows = ppfRowsFromSchedule(startStr, yearlyContribution);
+    if (!rows.length) return null;
+    deposits = rows.map((r) => ({ date: new Date(`${r.date}T00:00:00`), amount: Number(r.amount) }));
+    start = deposits[0].date;
   }
 
+  const rate = Number(interestRate) > 0 ? Number(interestRate) : 0;
+  const byMonth = new Map();
+  deposits.forEach((d) => {
+    const key = `${d.date.getFullYear()}-${d.date.getMonth()}`;
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key).push(d);
+  });
+
+  const events = [];
   let balance = 0;
+  let totalInterest = 0;
   let fiscalInterest = 0;
   let y = start.getFullYear();
   let m = start.getMonth();
@@ -1526,18 +1561,65 @@ function ppfBalance(startStr, yearlyContribution, interestRate) {
   const todayM = today.getMonth();
   while (y < todayY || (y === todayY && m <= todayM)) {
     const completed = y < todayY || m < todayM;
-    const deposit = deposits.get(`${y}-${m}`);
-    if (deposit && deposit.getDate() <= 5) balance += yearly;
+    const monthDeposits = (byMonth.get(`${y}-${m}`) || []).slice().sort((a, b) => a.date - b.date);
+    monthDeposits.filter((d) => d.date.getDate() <= 5).forEach((d) => {
+      balance += d.amount;
+      events.push({ date: isoDay(d.date), kind: "deposit", amount: round2(d.amount), balance: round2(balance) });
+    });
     if (completed && rate) fiscalInterest += (balance * rate) / 1200;
-    if (deposit && deposit.getDate() > 5) balance += yearly;
+    monthDeposits.filter((d) => d.date.getDate() > 5).forEach((d) => {
+      balance += d.amount;
+      events.push({ date: isoDay(d.date), kind: "deposit", amount: round2(d.amount), balance: round2(balance) });
+    });
     if (completed && m === 2) {
-      balance += fiscalInterest;
+      if (fiscalInterest) {
+        const posted = round2(fiscalInterest);
+        balance += posted;
+        totalInterest += posted;
+        events.push({ date: `${y}-03-31`, kind: "interest", amount: posted, balance: round2(balance) });
+      }
       fiscalInterest = 0;
     }
     m += 1;
     if (m > 11) { m = 0; y += 1; }
   }
-  return Math.round(balance * 100) / 100;
+  return {
+    events,
+    principal: round2(deposits.reduce((sum, d) => sum + d.amount, 0)),
+    interest: round2(totalInterest),
+    balance: round2(balance),
+  };
+}
+
+function ppfRowHtml(row = {}) {
+  const today = isoDay(new Date());
+  return `<div class="ppf-row">
+    <input type="date" class="ppf-date" value="${esc(row.date || today)}" max="${today}" aria-label="Contribution date">
+    <span class="input-affix"><span class="affix">₹</span><input type="number" class="ppf-amount" min="0" step="0.01" inputmode="decimal" value="${row.amount ?? ""}" placeholder="0" aria-label="Contribution amount"></span>
+    <button class="icon-btn" type="button" data-ppf-remove aria-label="Remove contribution">${icon("close")}</button>
+  </div>`;
+}
+
+function ppfLedgerHtml(item) {
+  const transactions = Array.isArray(item.details?.transactions) ? item.details.transactions : null;
+  const ledger = ppfLedger(item.start_date, item.details?.yearly_contribution, item.details?.interest_rate, transactions);
+  if (!ledger || !ledger.events.length) return "";
+  const rows = ledger.events.slice().reverse().map((event) => `
+    <tr>
+      <td>${fmtDate(event.date)}</td>
+      <td>${event.kind === "interest" ? "Interest credited" : "Contribution"}</td>
+      <td class="num">${inr2(event.amount)}</td>
+      <td class="num">${inr2(event.balance)}</td>
+    </tr>`).join("");
+  return `
+    <div class="section-label" style="margin-top:20px">Contributions and interest</div>
+    <div class="table-wrap">
+      <table class="table" style="min-width:0">
+        <thead><tr><th>Date</th><th>Entry</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:8px">Interest is credited on 31 March each year; a deposit paid after the 5th earns from the next month.</p>`;
 }
 
 function wireInvestmentForm(form, meta, existing) {
@@ -1586,19 +1668,63 @@ function wireInvestmentForm(form, meta, existing) {
     const startEl = form.querySelector('[name="start_date"]');
     const yearlyEl = form.querySelector('[name="yearly_contribution"]');
     const rateEl = form.querySelector('[name="interest_rate"]');
-    if (startEl && yearlyEl && invested) {
-      const syncPpf = () => {
-        const years = ppfContributionYears(startEl.value);
-        const yearly = Number(yearlyEl.value);
-        if (!years || !Number.isFinite(yearly) || yearly <= 0) return;
-        if (!touched.invested) invested.value = round2(years * yearly);
-        if (!touched.current && current) {
-          const balance = ppfBalance(startEl.value, yearly, rateEl ? rateEl.value : 0);
-          if (balance !== null) current.value = round2(balance);
-        }
+    const rowsHost = form.querySelector("#ppf-rows");
+    const addBtn = form.querySelector("#ppf-add-row");
+    const txInput = form.querySelector('[name="transactions"]');
+
+    const readRows = () => (rowsHost ? [...rowsHost.querySelectorAll(".ppf-row")].map((row) => ({
+      date: row.querySelector(".ppf-date").value,
+      amount: Number(row.querySelector(".ppf-amount").value),
+    })).filter((r) => r.date && Number.isFinite(r.amount) && r.amount > 0) : []);
+
+    const renderRows = (rows) => {
+      if (!rowsHost) return;
+      rowsHost.innerHTML = rows.map((r) => ppfRowHtml(r)).join("");
+      hydrateIcons(rowsHost);
+    };
+
+    const syncPpf = () => {
+      const rows = readRows();
+      const schedule = ppfRowsFromSchedule(startEl?.value, yearlyEl?.value);
+      const onSchedule = rows.length === schedule.length && rows.every((row, i) => (
+        row.date === schedule[i].date && Number(row.amount) === Number(schedule[i].amount)
+      ));
+      if (txInput) txInput.value = onSchedule ? "[]" : JSON.stringify(rows);
+      const ledger = ppfLedger(startEl?.value, yearlyEl?.value, rateEl?.value, rows);
+      if (!ledger) return;
+      if (!touched.invested && invested) invested.value = round2(ledger.principal);
+      if (!touched.current && current) current.value = round2(ledger.balance);
+    };
+
+    if (rowsHost) {
+      const stored = Array.isArray(existing?.details?.transactions) ? existing.details.transactions : [];
+      renderRows(stored.length ? stored : ppfRowsFromSchedule(existing?.start_date || "", existing?.details?.yearly_contribution));
+      if (txInput) txInput.value = JSON.stringify(stored);
+      let rowsTouched = stored.length > 0;
+
+      rowsHost.addEventListener("input", () => { rowsTouched = true; syncPpf(); });
+      rowsHost.addEventListener("click", (event) => {
+        if (!event.target.closest("[data-ppf-remove]")) return;
+        event.target.closest(".ppf-row")?.remove();
+        rowsTouched = true;
+        syncPpf();
+      });
+      addBtn?.addEventListener("click", () => {
+        rowsHost.insertAdjacentHTML("beforeend", ppfRowHtml());
+        hydrateIcons(rowsHost);
+        rowsTouched = true;
+        syncPpf();
+      });
+
+      const rebuildSchedule = () => {
+        if (rowsTouched) return;
+        renderRows(ppfRowsFromSchedule(startEl?.value, yearlyEl?.value));
+        syncPpf();
       };
-      [startEl, yearlyEl, rateEl].filter(Boolean).forEach((el) => {
-        ["input", "change"].forEach((evt) => el.addEventListener(evt, syncPpf));
+      ["input", "change"].forEach((evt) => {
+        startEl?.addEventListener(evt, rebuildSchedule);
+        yearlyEl?.addEventListener(evt, rebuildSchedule);
+        rateEl?.addEventListener(evt, syncPpf);
       });
       if (!existing) syncPpf();
     }
@@ -1730,6 +1856,10 @@ function collectInvestmentPayload(form, meta) {
     if (f.input === "boolean") payload[f.key] = el.checked;
     else payload[f.key] = el.value;
   });
+  if (meta.key === "ppf") {
+    const tx = form.querySelector('[name="transactions"]');
+    if (tx) payload.transactions = tx.value || "[]";
+  }
   return payload;
 }
 

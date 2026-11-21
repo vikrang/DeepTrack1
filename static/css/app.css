@@ -327,6 +327,22 @@ img { display: block; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .span-2 { grid-column: span 2; }
 
+.ppf-rows { display: flex; flex-direction: column; gap: 10px; }
+.ppf-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; }
+.ppf-row input[type="date"], .ppf-row .input-affix input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.ppf-row input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3.5px var(--brand-soft); }
+.ppf-rows:empty + .btn { align-self: flex-start; }
+
 .switch { display: flex; align-items: center; gap: 10px; min-height: 42px; }
 .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
 .switch .track {

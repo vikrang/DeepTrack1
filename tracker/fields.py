@@ -302,7 +302,7 @@ _TYPES = [
             f("institution", "Bank / post office", "select", options=["India Post", *BANKS], required=True),
             f("account_no", "PPF account number", required=True),
             f("yearly_contribution", "Yearly contribution", "number", unit="₹", table=True, min=0, max=150000,
-              help="Counted once per year from the start date to work out the total contributed."),
+              help="Fills one deposit per year from the start date into the contribution list."),
             f("interest_rate", "Interest rate", "number", unit="%", min=0, max=20,
               help="Interest accrues monthly on the balance and is credited on 31 March each year."),
         ],
@@ -570,14 +570,6 @@ def ppf_contribution_years(start_date, today=None):
     return max(1, min(PPF_MAX_YEARS, years + 1))
 
 
-def ppf_total(start_date, yearly_contribution):
-    """Cumulative contributions: the yearly amount for each PPF year so far."""
-    years = ppf_contribution_years(start_date)
-    if years is None or not isinstance(yearly_contribution, (int, float)) or yearly_contribution <= 0:
-        return None
-    return round(yearly_contribution * years, 2)
-
-
 def _add_years(day: date, years: int) -> date:
     try:
         return day.replace(year=day.year + years)
@@ -585,50 +577,97 @@ def _add_years(day: date, years: int) -> date:
         return day.replace(year=day.year + years, day=28)
 
 
-def ppf_balance(start_date, yearly_contribution, interest_rate, today=None):
-    """Balance after monthly interest at the given rate, credited every 31 March.
-
-    A deposit counts for the month when it lands on or before the 5th; later
-    deposits start earning from the following month, as in a PPF passbook.
-    Interest since the last 31 March stays uncredited, exactly like the bank.
-    """
-    if not start_date:
-        return None
-    try:
-        start = date.fromisoformat(str(start_date))
-    except ValueError:
-        return None
-    if not isinstance(yearly_contribution, (int, float)) or yearly_contribution <= 0:
-        return None
-    today = today or date.today()
-    if today < start:
-        return None
-    rate = interest_rate if isinstance(interest_rate, (int, float)) and interest_rate > 0 else 0.0
-
-    deposits = {}
+def ppf_schedule(start, yearly_contribution, today):
+    """One deposit per year on the start-date anniversary, capped at 15."""
+    deposits = []
     for k in range(PPF_MAX_YEARS):
         day = _add_years(start, k)
         if day > today:
             break
-        deposits[(day.year, day.month)] = day
+        deposits.append((day, float(yearly_contribution)))
+    return deposits
 
+
+def ppf_ledger(start_date, yearly_contribution, interest_rate, transactions=None, today=None):
+    """Date-wise PPF ledger with interest credited on 31 March each year.
+
+    Each deposit earns from the month it lands when paid by the 5th, otherwise
+    from the next month, as in a passbook. Interest for a financial year is
+    posted on 31 March; interest since the last 31 March is not yet in the
+    balance. Returns {events, principal, interest, balance} or None without a
+    usable start date.
+    """
+    today = today or date.today()
+    if transactions is not None:
+        deposits = []
+        for item in transactions:
+            if not isinstance(item, dict):
+                continue
+            try:
+                day = date.fromisoformat(str(item.get("date")))
+            except ValueError:
+                continue
+            amount = item.get("amount")
+            if not isinstance(amount, (int, float)) or amount <= 0 or day > today:
+                continue
+            deposits.append((day, float(amount)))
+        deposits.sort(key=lambda pair: pair[0])
+        if not deposits:
+            return {"events": [], "principal": 0.0, "interest": 0.0, "balance": 0.0}
+        start = deposits[0][0]
+    else:
+        if not start_date:
+            return None
+        try:
+            start = date.fromisoformat(str(start_date))
+        except ValueError:
+            return None
+        if not isinstance(yearly_contribution, (int, float)) or yearly_contribution <= 0:
+            return None
+        if today < start:
+            return None
+        deposits = ppf_schedule(start, float(yearly_contribution), today)
+
+    rate = interest_rate if isinstance(interest_rate, (int, float)) and interest_rate > 0 else 0.0
+    by_month = {}
+    for day, amount in deposits:
+        by_month.setdefault((day.year, day.month), []).append((day, amount))
+
+    events = []
     balance = 0.0
+    total_interest = 0.0
     fiscal_interest = 0.0
     year, month = start.year, start.month
     while (year, month) <= (today.year, today.month):
         completed = (year, month) < (today.year, today.month)
-        deposit = deposits.get((year, month))
-        if deposit and deposit.day <= 5:
-            balance += yearly_contribution
+        month_deposits = sorted(by_month.get((year, month), []))
+        for day, amount in month_deposits:
+            if day.day > 5:
+                continue
+            balance += amount
+            events.append({"date": day.isoformat(), "kind": "deposit", "amount": round(amount, 2), "balance": round(balance, 2)})
         if completed and rate:
             fiscal_interest += balance * rate / 1200
-        if deposit and deposit.day > 5:
-            balance += yearly_contribution
+        for day, amount in month_deposits:
+            if day.day <= 5:
+                continue
+            balance += amount
+            events.append({"date": day.isoformat(), "kind": "deposit", "amount": round(amount, 2), "balance": round(balance, 2)})
         if completed and month == 3:
-            balance += fiscal_interest
+            if fiscal_interest:
+                posted = round(fiscal_interest, 2)
+                balance += posted
+                total_interest += posted
+                events.append({"date": f"{year}-03-31", "kind": "interest", "amount": posted, "balance": round(balance, 2)})
             fiscal_interest = 0.0
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    return round(balance, 2)
+
+    return {
+        "events": events,
+        "principal": round(sum(amount for _, amount in deposits), 2),
+        "interest": round(total_interest, 2),
+        "balance": round(balance, 2),
+    }
 
 
 def refresh_ppf_totals() -> int:
@@ -649,15 +688,18 @@ def refresh_ppf_totals() -> int:
             continue
         years = ppf_contribution_years(row["start_date"])
         yearly = details.get("yearly_contribution")
-        principal = ppf_total(row["start_date"], yearly)
-        balance = ppf_balance(row["start_date"], yearly, details.get("interest_rate"))
-        if years is None or principal is None or balance is None:
+        transactions = details.get("transactions") if isinstance(details.get("transactions"), list) else None
+        ledger = ppf_ledger(row["start_date"], yearly, details.get("interest_rate"), transactions)
+        if ledger is None:
             continue
+        principal, balance = ledger["principal"], ledger["balance"]
         auto = details.get("ppf_auto")
         if auto is None:
             stored = float(row["invested_amount"] or 0)
             auto = (
-                any(abs(stored - yearly * k) < 0.01 for k in range(1, years + 1))
+                years is not None
+                and isinstance(yearly, (int, float))
+                and any(abs(stored - yearly * k) < 0.01 for k in range(1, years + 1))
                 and abs(float(row["current_value"] or 0) - stored) < 0.01
             )
             if auto:
@@ -961,6 +1003,46 @@ def validate_investment(payload: dict) -> tuple[dict, dict]:
         errors["start_date"] = str(exc)
         start_date = None
 
+    if type_key == "ppf":
+        raw_tx = payload.get("transactions")
+        if isinstance(raw_tx, str):
+            if raw_tx.strip():
+                try:
+                    raw_tx = json.loads(raw_tx)
+                except ValueError:
+                    raw_tx = None
+                    errors["transactions"] = "The contribution list could not be read"
+            else:
+                raw_tx = []
+        if raw_tx is not None:
+            if not isinstance(raw_tx, list):
+                errors["transactions"] = "The contribution list could not be read"
+            else:
+                cleaned = []
+                for item in raw_tx:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        day = parse_date(item.get("date"))
+                        amount = parse_number(item.get("amount"))
+                    except ValueError:
+                        errors["transactions"] = "Every contribution needs a date and an amount"
+                        cleaned = []
+                        break
+                    if not day or amount is None or amount <= 0:
+                        errors["transactions"] = "Every contribution needs a date and a positive amount"
+                        cleaned = []
+                        break
+                    if day > date.today().isoformat():
+                        errors["transactions"] = "A contribution can't be dated in the future"
+                        cleaned = []
+                        break
+                    cleaned.append({"date": day, "amount": round(amount, 2)})
+                if cleaned:
+                    details["transactions"] = cleaned
+                elif "transactions" not in errors:
+                    details.pop("transactions", None)
+
     maturity_raw = details.get("maturity_date")
     if start_date and maturity_raw and maturity_raw < start_date:
         errors["maturity_date"] = "Maturity cannot be before the start date"
@@ -1028,9 +1110,15 @@ def validate_investment(payload: dict) -> tuple[dict, dict]:
     derived_invested, derived_value = _derive_values(type_meta, details)
     ppf_principal = ppf_value = None
     if type_key == "ppf":
-        ppf_principal = ppf_total(start_date, details.get("yearly_contribution"))
-        ppf_value = ppf_balance(start_date, details.get("yearly_contribution"), details.get("interest_rate"))
-        if ppf_principal is not None:
+        ledger = ppf_ledger(
+            start_date,
+            details.get("yearly_contribution"),
+            details.get("interest_rate"),
+            details.get("transactions") if isinstance(details.get("transactions"), list) else None,
+        )
+        if ledger is not None:
+            ppf_principal = ledger["principal"]
+            ppf_value = ledger["balance"]
             if derived_invested is None:
                 derived_invested = ppf_principal
             if derived_value is None:
