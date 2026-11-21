@@ -45,24 +45,24 @@ To explore with realistic data, open the empty dashboard and click **Load sample
 - **Privacy by default** — PAN, Aadhaar and account numbers are masked for viewers and for other members. Only the owner and admins see them in full.
 - **Dashboard** — portfolio value, invested amount, unrealised gain, monthly SIP total, allocation donut, value by instrument type, member split, largest holdings, upcoming maturities and recent activity.
 - **Auto-calculated amounts** — quantity × price for market-linked holdings, contributions × months for RD, and similar rules. Leave *Amount invested* or *Current value* blank and the app derives them from the details.
-- **NSE market data** — download `EQUITY_L.csv` and the daily bhavcopy straight from NSE, upload them, then search any scrip by three letters and refresh live prices. See below.
+- **NSE market data, imported automatically** — the equity master (`EQUITY_L.csv`) and the latest bhavcopy — covering equity shares, ETFs and every other listed cash-market product — are pulled straight from NSE on startup and on demand, with no file upload. The page always shows the dates the data is as of. See below.
 - **Row and bulk actions** — edit or delete any holding from its row; admins can also tick several rows (or select all) and delete them in one go.
 - **Google sign-in with an email allowlist** — optionally let selected Gmail/Google accounts in through Firebase Authentication, enforced on the server. See [Google sign-in and hosted access](#google-sign-in-and-hosted-access).
 - **Excel import/export** — see below.
 
 ## NSE market data
 
-Open **Market data** (admins only). The page has three parts:
+Open **Market data** (admins only). The app imports NSE data by itself; you never have to download or upload files:
 
-1. **Download from NSE** — fetches `EQUITY_L.csv` (every listed scrip with symbol, name, ISIN and face value) and the current-day bhavcopy (end-of-day prices). The bhavcopy date defaults to today; NSE serves the latest trading day and the app skips weekends and holidays automatically. Both files land in your browser's downloads folder.
-2. **Upload to the app** — drop the downloaded `.csv`, `.zip` or `.txt` file on the upload zone. The app recognises the file from its header row and imports scrips or prices into the local database. EQUITY_L takes a few seconds (~2,600 scrips); a bhavcopy adds price rows for every traded symbol.
+1. **Automatic import** — at startup, and whenever you click **Sync from NSE**, DeepTrack fetches `EQUITY_L.csv` (every listed scrip with symbol, name, ISIN and face value) and the latest bhavcopy (end-of-day prices for the whole cash-market segment: equity shares, ETFs and any other listed cash-market products). The bhavcopy date defaults to today; NSE serves the latest trading day and the app skips weekends and holidays automatically. Startup only re-fetches when the stored prices are more than 12 hours old.
+2. **Data dates are shown** — the page header and KPI cards display the date the NSE equity list was loaded and the trade date of the bhavcopy in use, so you always know how fresh the prices are.
 3. **Update prices** — once a bhavcopy is loaded, click **Update current prices**. For every stock and ETF holding with a matching symbol, the app copies the closing price into *LTP* (stocks) or *Current price* (ETFs) and recalculates the current value. The result shows how many holdings were updated and lists any symbols it could not find.
 
-You can also upload the files out of band: download them from NSE yourself and drop them on the same zone. The uppercase-series (EQ) row wins if a symbol trades in several series.
+If your network blocks NSE, the **If the sync is blocked** card still accepts an `EQUITY_L.csv` or bhavcopy you downloaded yourself — drop it on the zone and the app recognises the file from its header row. The uppercase-series (EQ) row wins if a symbol trades in several series.
 
 With scrips loaded, the **Symbol** field in stock and ETF forms becomes a search box — type at least three letters (for example `REL`) and pick a suggestion. The app fills the company name and exchange; sector, LTP and broker details come from the market data and Masters automatically.
 
-NSE rate-limits and occasionally changes its archive URLs. If a download fails, the toast explains what to do; a manual download plus upload always works.
+NSE rate-limits and occasionally changes its archive URLs. If an automatic sync fails, the toast explains what to do, and the manual fallback (drop a file you downloaded yourself) always works.
 
 ## Excel import and export
 
