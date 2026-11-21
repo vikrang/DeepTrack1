@@ -14,7 +14,7 @@ import requests
 from flask import Blueprint, g, jsonify, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import config, db, excelio, fields, firebase, market, seed, services
+from . import broker, config, db, excelio, fields, firebase, market, seed, services
 from .validators import (
     parse_date,
     validate_account_number,
@@ -1123,6 +1123,40 @@ def export_portfolio():
     )
 
 
+def _start_import(actor, preview_rows, payloads, warnings, filename, source, **extra):
+    """Store a parsed upload for review, then return it to the browser."""
+    token = secrets.token_urlsafe(18)
+    store = {
+        "user_id": actor["id"],
+        "created_at": db.now(),
+        "source": source,
+        "rows": [
+            {"payload": p["payload"], "preview": p["preview"], "valid": p["valid"], "duplicate": p["duplicate"]}
+            for p in payloads
+        ],
+    }
+    (config.IMPORT_DIR / f"{token}.json").write_text(
+        json.dumps(store, default=str), encoding="utf-8"
+    )
+
+    ready = sum(1 for p in payloads if p["valid"] and not p["duplicate"])
+    duplicates = sum(1 for p in payloads if p["valid"] and p["duplicate"])
+    invalid = sum(1 for p in payloads if not p["valid"])
+    return jsonify(
+        token=token,
+        preview=preview_rows[:500],
+        preview_truncated=len(preview_rows) > 500,
+        rows=len(preview_rows),
+        valid=ready,
+        duplicates=duplicates,
+        invalid=invalid,
+        sheet_warnings=warnings,
+        filename=filename,
+        source=source,
+        **extra,
+    )
+
+
 @bp.post("/import/preview")
 @admin_required
 def import_preview():
@@ -1146,32 +1180,38 @@ def import_preview():
     except ValueError as exc:
         return jsonify(error=str(exc)), 422
 
-    token = secrets.token_urlsafe(18)
-    store = {
-        "user_id": actor["id"],
-        "created_at": db.now(),
-        "rows": [
-            {"payload": p["payload"], "preview": p["preview"], "valid": p["valid"], "duplicate": p["duplicate"]}
-            for p in payloads
-        ],
-    }
-    (config.IMPORT_DIR / f"{token}.json").write_text(
-        json.dumps(store, default=str), encoding="utf-8"
+    return _start_import(
+        actor, preview_rows, payloads, warnings, upload.filename, "workbook"
     )
 
-    ready = sum(1 for p in payloads if p["valid"] and not p["duplicate"])
-    duplicates = sum(1 for p in payloads if p["valid"] and p["duplicate"])
-    invalid = sum(1 for p in payloads if not p["valid"])
-    return jsonify(
-        token=token,
-        preview=preview_rows[:500],
-        preview_truncated=len(preview_rows) > 500,
-        rows=len(preview_rows),
-        valid=ready,
-        duplicates=duplicates,
-        invalid=invalid,
-        sheet_warnings=warnings,
-        filename=upload.filename,
+
+@bp.post("/import/broker")
+@admin_required
+def import_broker():
+    actor = current_user()
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify(error="Choose a broker report to upload"), 400
+    if not upload.filename.lower().endswith(broker.EXTENSIONS):
+        return jsonify(
+            error="Upload the broker's Excel export (.xlsx, .xls) or a CSV. "
+            "Choose Download or Export in the broker's holdings page."
+        ), 400
+
+    members = [
+        {"id": m["id"], "name": m["name"], "email": m["email"]}
+        for m in services.member_totals()
+    ]
+    existing, existing_serial = _existing_identity()
+    try:
+        preview_rows, payloads, warnings, broker_name = broker.parse_broker(
+            upload.stream, upload.filename, members, actor["id"], existing, existing_serial
+        )
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 422
+
+    return _start_import(
+        actor, preview_rows, payloads, warnings, upload.filename, "broker", broker=broker_name
     )
 
 
@@ -1274,7 +1314,8 @@ def import_commit():
     conn.commit()
     path.unlink(missing_ok=True)
     if imported:
-        db.log_activity(actor["id"], "imported", f"Imported {imported} holding(s) from Excel", "investment", None)
+        source = "a broker report" if store.get("source") == "broker" else "Excel"
+        db.log_activity(actor["id"], "imported", f"Imported {imported} holding(s) from {source}", "investment", None)
     return jsonify(imported=imported, skipped=skipped, duplicates=duplicates)
 
 

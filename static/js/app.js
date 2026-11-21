@@ -3188,7 +3188,24 @@ function renderImport() {
     <section class="card card-pad" style="margin-bottom:18px">
       <div class="card-head">
         <div>
-          <div class="card-title">Upload your workbook</div>
+          <div class="card-title">Upload a broker report</div>
+          <div class="card-sub">No re-typing — holdings from ICICI Direct and Kotak Securities map straight to your portfolio</div>
+        </div>
+        <span class="pill pill-muted">ICICI Direct · Kotak</span>
+      </div>
+      <div class="dropzone" id="broker-dropzone" tabindex="0" role="button" aria-label="Upload broker report">
+        <div class="dz-icon">${icon("upload")}</div>
+        <h4>Drop your broker's holdings export here</h4>
+        <p>or click to browse files</p>
+        <span class="file-hint">Excel (.xlsx, .xls) or CSV downloaded from ICICI Direct / Kotak Securities</span>
+      </div>
+      <input type="file" id="broker-file" accept=".xlsx,.xlsm,.xls,.csv" class="hidden">
+    </section>
+
+    <section class="card card-pad" style="margin-bottom:18px">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Upload a filled template</div>
           <div class="card-sub">We validate every row before saving anything</div>
         </div>
         <span class="pill pill-muted">.xlsx</span>
@@ -3206,6 +3223,7 @@ function renderImport() {
   `;
   hydrateIcons($("#view"));
   wireDropzone();
+  wireBrokerDropzone();
 
   if (!state.storageStatus) {
     api("/storage")
@@ -3215,9 +3233,9 @@ function renderImport() {
   }
 }
 
-function wireDropzone() {
-  const zone = $("#dropzone");
-  const input = $("#import-file");
+function wireDropzone(zoneId = "dropzone", inputId = "import-file", onFile = uploadImport) {
+  const zone = $(`#${zoneId}`);
+  const input = $(`#${inputId}`);
   if (!zone || !input) return;
   zone.addEventListener("click", () => input.click());
   zone.addEventListener("keydown", (event) => {
@@ -3227,7 +3245,7 @@ function wireDropzone() {
     }
   });
   input.addEventListener("change", () => {
-    if (input.files?.[0]) uploadImport(input.files[0]);
+    if (input.files?.[0]) onFile(input.files[0]);
   });
   ["dragenter", "dragover"].forEach((type) => zone.addEventListener(type, (event) => {
     event.preventDefault();
@@ -3239,8 +3257,12 @@ function wireDropzone() {
   }));
   zone.addEventListener("drop", (event) => {
     const file = event.dataTransfer?.files?.[0];
-    if (file) uploadImport(file);
+    if (file) onFile(file);
   });
+}
+
+function wireBrokerDropzone() {
+  wireDropzone("broker-dropzone", "broker-file", uploadBroker);
 }
 
 async function uploadImport(file) {
@@ -3272,6 +3294,36 @@ async function uploadImport(file) {
   }
 }
 
+async function uploadBroker(file) {
+  if (!/\.(xlsx|xlsm|xls|csv)$/i.test(file.name)) {
+    toast("Upload the broker's Excel or CSV export", "error");
+    return;
+  }
+  const zone = $("#broker-dropzone");
+  zone?.classList.add("busy");
+  if (zone) {
+    zone.querySelector("h4").textContent = "Reading the broker report…";
+    zone.querySelector("p").textContent = file.name;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const data = await api("/import/broker", { method: "POST", form });
+    state.importPreview = data;
+    state.importResult = null;
+    renderImport();
+    $("#import-preview")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    toast(`${data.valid} of ${data.rows} holding${data.rows === 1 ? "" : "s"} ready to import`, data.invalid ? "warn" : "ok");
+  } catch (error) {
+    toast(error.message, "error");
+    zone?.classList.remove("busy");
+    if (zone) {
+      zone.querySelector("h4").textContent = "Drop your broker's holdings export here";
+      zone.querySelector("p").textContent = "or click to browse files";
+    }
+  }
+}
+
 function importPreviewHtml(data) {
   const rows = data.preview || [];
   const issues = (row) => {
@@ -3289,7 +3341,7 @@ function importPreviewHtml(data) {
       <div class="card-head" style="padding:20px 22px 0">
         <div>
           <div class="card-title">Review before importing</div>
-          <div class="card-sub">${esc(data.filename || "Workbook")} · ${data.rows} row${data.rows === 1 ? "" : "s"} found</div>
+          <div class="card-sub">${data.broker ? `${esc(data.broker)} · ` : ""}${esc(data.filename || "Workbook")} · ${data.rows} row${data.rows === 1 ? "" : "s"} found</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span class="pill pill-ok">${data.valid} ready</span>

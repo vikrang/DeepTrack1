@@ -371,6 +371,34 @@ DeepTrack checks every row *before* saving anything, so you always get a preview
 7. When you're happy, click **Import N rows**.
 8. Toast: **Imported N holdings**, and a banner summarises *"N imported · N already there · N skipped."*
 
+### Or upload your broker's holdings report
+
+If your broker already gives you a holdings file, you don't have to retype it into the
+template. *(Admins only, same as the template upload.)*
+
+1. Download the file from the broker:
+   - **ICICI Direct:** Portfolio → Holdings → **Download** (Excel).
+   - **Kotak Securities:** Portfolio → **Export** (Excel or CSV).
+2. Open **Import / export** and drop it on **Upload a broker report**
+   (**Drop your broker's holdings export here**). `.xlsx`, `.xlsm`, `.xls` and `.csv` work.
+3. DeepTrack reads the report by its column labels. For every stock, ETF and mutual fund it
+   fills in what the broker left out:
+   - the **NSE symbol** from the ISIN or company name (it says "check it" when it had to
+     guess from the name),
+   - the **AMFI scheme**, plan, option and AMC for mutual funds,
+   - **invested** and **current value** from quantity × price,
+   - the **owner** from the member named in the report (you if nobody is named).
+4. Check the **Review before importing** table. Rows the parser couldn't pin down — usually a
+   small company not in the NSE list or a fund name too different from AMFI's — show a note
+   in the **Status** column. Fix just those, then click **Import N rows**.
+
+Totals rows, zero-quantity rows and price-only footer rows are skipped automatically, and
+re-uploading the same report is safe: holdings already in the portfolio are marked
+**Already imported** and skipped.
+
+> Older `.xls` files need the `xlrd` package. It is listed in `requirements.txt`; if you
+> installed DeepTrack before this feature, run `pip install -r requirements.txt` once.
+
 ### Three conveniences that save typing
 
 - **Leave money boxes blank.** *Amount invested* and *Current value* are computed from the
