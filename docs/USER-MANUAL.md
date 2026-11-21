@@ -245,6 +245,10 @@ that's what feeds the Dashboard's *Monthly SIPs* card.
 > DeepTrack calculates the **Maturity date** and **Maturity amount** for you — leave them
 > blank. If your bank statement only shows a maturity date, type that and leave the tenor blank.
 
+> **Tenor in any unit.** Type the tenure the way the bank quotes it: 3 years, 36 months or
+> 1095 days are all accepted — there is no 11-month or 31-day cap, and years + months + days
+> add together. The maturity date and amount recalculate as you type.
+
 **Recurring deposits (RD)** — Enter **Monthly deposit** and the **Tenor**. DeepTrack totals
 the deposits over the months and computes maturity.
 
