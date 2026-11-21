@@ -1207,6 +1207,21 @@ img { display: block; }
 }
 .ss-ltp { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
 .suggest-empty { padding: 10px 12px; font-size: 12px; color: var(--muted); }
+.scrip-suggest.scheme-suggest { max-height: 360px; }
+.scheme-group { padding: 6px 4px 8px; }
+.scheme-group + .scheme-group { border-top: 1px solid var(--line); }
+.scheme-head { display: flex; flex-direction: column; gap: 1px; padding: 2px 7px 6px; }
+.scheme-title { font-size: 12.5px; font-weight: 750; letter-spacing: -0.01em; }
+.scheme-meta { font-size: 11px; color: var(--muted); }
+.scheme-variants { display: flex; flex-wrap: wrap; gap: 6px; }
+.scheme-chip {
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 9px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  font: inherit; font-size: 11.5px; color: var(--ink); cursor: pointer;
+}
+.scheme-chip:hover, .scheme-chip.active { border-color: var(--brand); background: var(--surface-2); }
+.sv-plan { font-weight: 650; }
+.sv-nav { color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ---------------------------------------------------------------- market data */
 

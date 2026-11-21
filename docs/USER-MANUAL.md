@@ -228,8 +228,14 @@ and the **Demat account** it sits in. *Current price* fills from market data.
 Enter **Scheme name**, **AMC**, **Folio number**, **Units held**, **Average NAV** and
 **Current NAV**. If it's a SIP, fill **SIP amount (per month)** and **SIP debit day** —
 that's what feeds the Dashboard's *Monthly SIPs* card.
+> Tip: in **Scheme name** type at least 3 letters (`PAR`, `HDFC FLEX`) and the AMFI
+> scheme list appears, grouped by scheme with every plan/option — Direct or Regular,
+> Growth or IDCW (payout/reinvestment). Pick the variant and DeepTrack fills the AMC,
+> category, plan, option and latest NAV for you. The list downloads automatically.
 
 **ETFs** — exchange-traded funds. Like stocks: **Symbol**, **Quantity**, prices, demat account.
+> Tip: you can type 3+ letters in either **Symbol** or **ETF name** (`NIPPON NIFTY`) —
+> abbreviations are matched too — and picking a suggestion fills the symbol and exchange.
 
 ### Debt
 
@@ -498,7 +504,12 @@ It's automatic — you don't have to download or upload anything:
    you how many holdings updated and lists any symbols it couldn't find.
 
 Once the equity list is loaded, the **Symbol** box in share/ETF forms becomes a search box —
-type 3+ letters and pick a suggestion.
+type 3+ letters and pick a suggestion. ETF **names** work too: abbreviations like `NIP IND`
+are matched, so `NIPPON NIFTY` finds NIFTYBEES.
+
+The **mutual fund scheme list** comes from AMFI's daily NAV file and is refreshed the same
+way. It powers the **Scheme name** drill-down (plan/option variants with their latest NAV),
+so no manual download is needed there either.
 
 > The import repeats on its own whenever the stored prices are more than 12 hours old, so you
 > usually only need **Update current prices** for fresh valuations. If NSE is blocked on your

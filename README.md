@@ -60,7 +60,9 @@ Open **Market data** (admins only). The app imports NSE data by itself; you neve
 
 If your network blocks NSE, the **If the sync is blocked** card still accepts an `EQUITY_L.csv` or bhavcopy you downloaded yourself — drop it on the zone and the app recognises the file from its header row. The uppercase-series (EQ) row wins if a symbol trades in several series.
 
-With scrips loaded, the **Symbol** field in stock and ETF forms becomes a search box — type at least three letters (for example `REL`) and pick a suggestion. The app fills the company name and exchange; sector, LTP and broker details come from the market data and Masters automatically.
+With scrips loaded, the **Symbol** field in stock and ETF forms becomes a search box — type at least three letters (for example `REL`) and pick a suggestion. The app fills the company name and exchange; sector, LTP and broker details come from the market data and Masters automatically. ETF names work as well (`NIPPON NIFTY` finds NIFTYBEES despite NSE's abbreviations).
+
+The **Scheme name** field in the mutual fund form searches AMFI's daily NAV file and drills down: each scheme lists its Direct/Regular × Growth/IDCW variants with the latest NAV, and picking one fills the AMC, category, plan, option and current NAV. That list downloads automatically on startup, no upload needed.
 
 NSE rate-limits and occasionally changes its archive URLs. If an automatic sync fails, the toast explains what to do, and the manual fallback (drop a file you downloaded yourself) always works.
 

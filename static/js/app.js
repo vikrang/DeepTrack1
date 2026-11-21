@@ -1357,11 +1357,20 @@ function investmentFormHtml(meta, existing) {
   const inlineName = meta.name_after && meta.fields.some((f) => f.key === meta.name_after)
     ? meta.name_after
     : null;
+  const nameLookup = meta.key === "mutual_funds" ? "scheme" : meta.key === "etf" ? "scrip" : "";
+  const nameHint = nameLookup === "scheme"
+    ? `<span class="help">Type 3+ letters to search AMFI's scheme list — pick Direct or Regular and Growth or IDCW in one click.</span>`
+    : nameLookup === "scrip"
+      ? `<span class="help">Type 3+ letters to search NSE ETF names — picking one fills the symbol.</span>`
+      : "";
   const nameInputHtml = `
           <label class="field span-2">
             <span>${esc(meta.name_label || nameField.label || "Name")}<span class="req">*</span></span>
-            <input type="text" name="name" maxlength="160" placeholder="${esc(meta.name_placeholder || "")}" value="${esc(existing?.name || "")}">
+            ${nameLookup ? '<div class="scrip-picker">' : ""}
+            <input type="text" name="name" maxlength="160" placeholder="${esc(meta.name_placeholder || "")}" value="${esc(existing?.name || "")}"${nameLookup ? ' autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"' : ""}>
+            ${nameLookup ? `<div class="scrip-suggest${nameLookup === "scheme" ? " scheme-suggest" : ""}" data-name-suggest hidden></div></div>` : ""}
             <span class="err" data-err="name"></span>
+            ${nameHint}
           </label>`;
 
   return `
@@ -1844,6 +1853,8 @@ function wireInvestmentForm(form, meta, existing) {
     });
   }
   if (form.querySelector('[name="symbol"]')) wireScripLookup(form, meta);
+  if (meta.key === "mutual_funds") wireSchemeLookup(form);
+  if (meta.key === "etf") wireEtfNameLookup(form);
 }
 
 function wireScripLookup(form, meta) {
@@ -1933,6 +1944,215 @@ function wireScripLookup(form, meta) {
     event.preventDefault();
     const item = items[Number(button.dataset.suggestIndex)];
     if (item) choose(item);
+  });
+
+  input.addEventListener("blur", () => setTimeout(hide, 140));
+}
+
+function wireSchemeLookup(form) {
+  const input = form.querySelector('[name="name"]');
+  const box = form.querySelector("[data-name-suggest]");
+  if (!input || !box) return;
+
+  let timer = null;
+  let requestSeq = 0;
+  let groups = [];
+  let choices = [];
+  let active = -1;
+
+  const hide = () => {
+    box.hidden = true;
+    box.innerHTML = "";
+    groups = [];
+    choices = [];
+    active = -1;
+    input.setAttribute("aria-expanded", "false");
+  };
+
+  const paint = () => {
+    input.setAttribute("aria-expanded", "true");
+    box.hidden = false;
+    if (!groups.length) {
+      box.innerHTML = `<div class="suggest-empty">No scheme matched. The AMFI list downloads automatically — try again in a few minutes.</div>`;
+      return;
+    }
+    let index = -1;
+    box.innerHTML = groups.map((group) => `
+      <div class="scheme-group">
+        <div class="scheme-head">
+          <span class="scheme-title">${esc(group.name)}</span>
+          <span class="scheme-meta">${esc([group.amc, group.category].filter(Boolean).join(" · "))}</span>
+        </div>
+        <div class="scheme-variants">
+          ${group.variants.map((variant) => {
+            index += 1;
+            return `<button type="button" class="scheme-chip ${index === active ? "active" : ""}" data-pick="${index}">
+              <span class="sv-plan">${esc(variant.plan)} · ${esc(variant.option)}</span>
+              <span class="sv-nav">${variant.nav != null ? inr2(variant.nav) : "—"}</span>
+            </button>`;
+          }).join("")}
+        </div>
+      </div>`).join("");
+  };
+
+  const setSelect = (name, value) => {
+    const el = form.querySelector(`[name="${name}"]`);
+    if (!el || !value) return;
+    if (![...el.options].some((option) => option.value === value)) return;
+    el.value = value;
+  };
+
+  const choose = (choice) => {
+    if (!choice) return;
+    const { group, variant } = choice;
+    input.value = `${group.name} - ${variant.plan} - ${variant.option}`;
+    setSelect("amc", group.amc);
+    setSelect("scheme_category", group.category);
+    setSelect("plan", variant.plan);
+    setSelect("option", variant.option);
+    const navInput = form.querySelector('[name="current_nav"]');
+    if (navInput && variant.nav != null) navInput.value = variant.nav;
+    hide();
+    form.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  input.addEventListener("input", () => {
+    const term = input.value.trim();
+    clearTimeout(timer);
+    if (term.length < 3) {
+      hide();
+      return;
+    }
+    const seq = ++requestSeq;
+    timer = setTimeout(async () => {
+      try {
+        const data = await api(`/schemes?q=${encodeURIComponent(term)}`);
+        if (seq !== requestSeq) return;
+        groups = data.items || [];
+        choices = groups.flatMap((group) => group.variants.map((variant) => ({ group, variant })));
+        active = -1;
+        paint();
+      } catch {
+        if (seq === requestSeq) hide();
+      }
+    }, 240);
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (box.hidden) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      active = Math.min(active + 1, choices.length - 1);
+      paint();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      active = Math.max(active - 1, 0);
+      paint();
+    } else if (event.key === "Enter" && active >= 0) {
+      event.preventDefault();
+      choose(choices[active]);
+    } else if (event.key === "Escape") {
+      hide();
+    }
+  });
+
+  box.addEventListener("mousedown", (event) => {
+    const button = event.target.closest("[data-pick]");
+    if (!button) return;
+    event.preventDefault();
+    choose(choices[Number(button.dataset.pick)]);
+  });
+
+  input.addEventListener("blur", () => setTimeout(hide, 140));
+}
+
+function wireEtfNameLookup(form) {
+  const input = form.querySelector('[name="name"]');
+  const box = form.querySelector("[data-name-suggest]");
+  if (!input || !box) return;
+
+  let timer = null;
+  let requestSeq = 0;
+  let items = [];
+  let active = -1;
+
+  const hide = () => {
+    box.hidden = true;
+    box.innerHTML = "";
+    items = [];
+    active = -1;
+    input.setAttribute("aria-expanded", "false");
+  };
+
+  const paint = () => {
+    input.setAttribute("aria-expanded", "true");
+    box.hidden = false;
+    if (!items.length) {
+      box.innerHTML = `<div class="suggest-empty">No match — NSE data is imported automatically under Market data.</div>`;
+      return;
+    }
+    box.innerHTML = items.map((item, index) => `
+      <button type="button" class="suggest-item ${index === active ? "active" : ""}" data-pick="${index}" role="option">
+        <span class="ss-sym">${esc(item.symbol)}</span>
+        <span class="ss-name">${esc(item.name)}</span>
+        <span class="ss-ltp">${item.ltp != null ? inr2(item.ltp) : "—"}</span>
+      </button>`).join("");
+  };
+
+  const choose = (item) => {
+    if (!item) return;
+    input.value = item.name || item.symbol;
+    const symbol = form.querySelector('[name="symbol"]');
+    if (symbol) symbol.value = item.symbol;
+    const exchange = form.querySelector('[name="exchange"]');
+    if (exchange) exchange.value = "NSE";
+    hide();
+  };
+
+  input.addEventListener("input", () => {
+    const term = input.value.trim();
+    clearTimeout(timer);
+    if (term.length < 3) {
+      hide();
+      return;
+    }
+    const seq = ++requestSeq;
+    timer = setTimeout(async () => {
+      try {
+        const data = await api(`/scrips?q=${encodeURIComponent(term)}`);
+        if (seq !== requestSeq) return;
+        items = data.items || [];
+        active = -1;
+        paint();
+      } catch {
+        if (seq === requestSeq) hide();
+      }
+    }, 220);
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (box.hidden) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      active = Math.min(active + 1, items.length - 1);
+      paint();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      active = Math.max(active - 1, 0);
+      paint();
+    } else if (event.key === "Enter" && active >= 0) {
+      event.preventDefault();
+      choose(items[active]);
+    } else if (event.key === "Escape") {
+      hide();
+    }
+  });
+
+  box.addEventListener("mousedown", (event) => {
+    const button = event.target.closest("[data-pick]");
+    if (!button) return;
+    event.preventDefault();
+    choose(items[Number(button.dataset.pick)]);
   });
 
   input.addEventListener("blur", () => setTimeout(hide, 140));

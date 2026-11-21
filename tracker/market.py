@@ -5,6 +5,10 @@ has to be uploaded by hand, though a manual upload stays available as a fallback
 The bhavcopy keeps the whole cash-market segment — equity shares, ETFs and other
 listed cash-market products — and both the current UDiFF layout and the older
 ``cm*MMMYYYYbhav.csv`` layout are accepted.
+
+Mutual fund schemes come from AMFI's daily NAV file (see ``sync_schemes``). Each
+row is one plan/option variant of a scheme (Direct/Regular, Growth/IDCW), which
+is what lets the form offer a drill-down after a name search.
 """
 
 import csv
@@ -31,6 +35,7 @@ NSE_HEADERS = {
 EQUITY_LIST_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 UDIFF_URL = "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{stamp}_F_0000.csv.zip"
 LEGACY_URL = "https://nsearchives.nseindia.com/content/historical/EQUITIES/{year}/{month}/cm{stamp}bhav.csv.zip"
+NAV_ALL_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
 
 MAX_UNCOMPRESSED = 40 * 1024 * 1024
 SEARCH_MIN = 3
@@ -38,6 +43,7 @@ STOCK_TYPES = ("stocks", "etf")
 CASH_SEGMENT = "CM"
 # Startup auto-sync treats the stored prices as stale once they are this old.
 STALE_HOURS = 12
+SCHEME_STALE_HOURS = 20
 
 
 class MarketError(Exception):
@@ -376,36 +382,76 @@ def _like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+# NSE abbreviates issuer names ("NIP IND ETF NIFTY BEES"), so the search expands
+# the common tokens before matching; otherwise "Nippon" finds nothing.
+_SCRIP_ALIASES = {
+    "NIP": "NIPPON", "NIPPONAMC": "NIPPON", "IND": "INDIA",
+    "NIF": "NIFTY", "NXT": "NEXT",
+    "BIRLASLAMC": "BIRLA SUN LIFE", "ADITYBIRLA": "ADITYA BIRLA",
+    "ICICIPRAMC": "ICICI PRUDENTIAL", "ICICIPRUD": "ICICI PRUDENTIAL",
+    "DSPAMC": "DSP", "EDELAMC": "EDELWEISS", "AXISAMC": "AXIS",
+    "KOTAKMAMC": "KOTAK", "MIRAEAMC": "MIRAE", "MOTILALAMC": "MOTILAL OSWAL",
+    "HSBCAMC": "HSBC", "UTIAMC": "UTI", "SBIAMC": "SBI", "SBIMFTCP": "SBI",
+    "BFAM": "BAJAJ FINSERV", "BARODABNP": "BARODA BNP", "TATAAMC": "TATA",
+    "INVESCOAMC": "INVESCO", "GROWWAMC": "GROWW",
+}
+
+_WORD_SPLIT = re.compile(r"[A-Z0-9]+")
+
+
+def _scrip_words(text: str) -> list[str]:
+    words = []
+    for word in _WORD_SPLIT.findall((text or "").upper()):
+        words.extend(_SCRIP_ALIASES.get(word, word).split())
+    return words
+
+
 def search(term: str, limit: int = 20) -> list[dict]:
+    """Search NSE scrips by symbol or name, ignoring abbreviation differences.
+
+    Every query word must appear in the symbol/name (after alias expansion), so
+    "nippon nifty" finds NIP IND ETF NIFTY BEES even though neither stored field
+    spells out "Nippon".
+    """
     term = (term or "").strip()
     if len(term) < SEARCH_MIN:
         return []
-    needle = _like(term.upper())
+    tokens = _scrip_words(term)
+    if not tokens:
+        return []
+    compact = "".join(tokens)
     rows = db.query(
         """SELECT s.symbol, s.name, s.series, s.isin,
                   p.close_price AS ltp, p.trade_date
            FROM scrips s
-           LEFT JOIN market_prices p ON p.symbol = s.symbol
-           WHERE s.symbol LIKE ? ESCAPE '\\' OR s.name LIKE ? ESCAPE '\\'
-           ORDER BY
-               CASE WHEN s.symbol = ? THEN 0
-                    WHEN s.symbol LIKE ? ESCAPE '\\' THEN 1
-                    ELSE 2 END,
-               CASE WHEN s.series = 'EQ' THEN 0 ELSE 1 END,
-               s.symbol
-           LIMIT ?""",
-        (needle + "%", "%" + needle + "%", term.upper(), needle + "%", limit),
+           LEFT JOIN market_prices p ON p.symbol = s.symbol"""
     )
+    ranked = []
+    for row in rows:
+        haystack = " ".join(_scrip_words(f"{row['symbol']} {row['name']}"))
+        if not all(token in haystack for token in tokens):
+            continue
+        symbol = row["symbol"]
+        if symbol == term.upper():
+            score = 0
+        elif symbol.startswith(compact):
+            score = 1
+        elif symbol.startswith(term.upper()):
+            score = 1
+        else:
+            score = 2
+        ranked.append((score, 0 if row["series"] == "EQ" else 1, symbol, row))
+    ranked.sort(key=lambda item: item[:3])
     return [
         {
-            "symbol": r["symbol"],
-            "name": r["name"] or r["symbol"],
-            "series": r["series"] or "",
-            "isin": r["isin"] or "",
-            "ltp": round(r["ltp"], 2) if r["ltp"] is not None else None,
-            "trade_date": r["trade_date"],
+            "symbol": row["symbol"],
+            "name": row["name"] or row["symbol"],
+            "series": row["series"] or "",
+            "isin": row["isin"] or "",
+            "ltp": round(row["ltp"], 2) if row["ltp"] is not None else None,
+            "trade_date": row["trade_date"],
         }
-        for r in rows
+        for *_rest, row in ranked[:limit]
     ]
 
 
@@ -414,6 +460,225 @@ def _meta_value(key):
     if row is None:
         return None, None
     return row["value"], row["updated_at"]
+
+
+# ---------------------------------------------------------------- MF schemes
+
+
+_AMC_ALIASES = {
+    "sbi mutual fund": "SBI Mutual Fund",
+    "hdfc mutual fund": "HDFC Mutual Fund",
+    "icici prudential mutual fund": "ICICI Prudential MF",
+    "nippon india mutual fund": "Nippon India MF",
+    "axis mutual fund": "Axis Mutual Fund",
+    "kotak mahindra mutual fund": "Kotak Mahindra MF",
+    "uti mutual fund": "UTI Mutual Fund",
+    "aditya birla sun life mutual fund": "Aditya Birla Sun Life MF",
+    "mirae asset mutual fund": "Mirae Asset MF",
+    "ppfas mutual fund": "Parag Parikh MF",
+    "parag parikh mutual fund": "Parag Parikh MF",
+    "quant mutual fund": "Quant MF",
+    "dsp mutual fund": "DSP MF",
+    "franklin templeton mutual fund": "Franklin Templeton MF",
+    "tata mutual fund": "Tata MF",
+    "motilal oswal mutual fund": "Motilal Oswal MF",
+    "edelweiss mutual fund": "Edelweiss MF",
+    "invesco mutual fund": "Invesco MF",
+    "hsbc mutual fund": "HSBC MF",
+    "bandhan mutual fund": "Bandhan MF",
+    "sundaram mutual fund": "Sundaram MF",
+    "navi mutual fund": "Navi MF",
+    "whiteoak capital mutual fund": "WhiteOak MF",
+    "whiteoak mutual fund": "WhiteOak MF",
+}
+
+_MF_CATEGORY_RULES = [
+    ("flexi cap", "Flexi Cap"), ("multi cap", "Multi Cap"), ("large & mid", "Other"),
+    ("large cap", "Large Cap"), ("mid cap", "Mid Cap"), ("small cap", "Small Cap"),
+    ("elss", "ELSS (Tax Saving)"), ("tax saving", "ELSS (Tax Saving)"),
+    ("index", "Index Fund"),
+    ("sectoral", "Sectoral / Thematic"), ("thematic", "Sectoral / Thematic"),
+    ("balanced advantage", "Balanced Advantage"),
+    ("aggressive hybrid", "Aggressive Hybrid"), ("conservative hybrid", "Conservative Hybrid"),
+    ("arbitrage", "Arbitrage"), ("liquid", "Liquid"), ("overnight", "Overnight"),
+    ("ultra short", "Ultra Short Duration"), ("corporate bond", "Corporate Bond"),
+    ("credit risk", "Credit Risk"), ("gilt", "Gilt"), ("gold", "Gold"),
+    ("international", "International / Fund of Funds"),
+    ("fund of funds", "International / Fund of Funds"), ("focused", "Focused Fund"),
+]
+
+_VARIANT_ORDER = {("Direct", "Growth"): 0, ("Direct", "IDCW - Payout"): 1,
+                  ("Direct", "IDCW - Reinvestment"): 2, ("Regular", "Growth"): 3,
+                  ("Regular", "IDCW - Payout"): 4, ("Regular", "IDCW - Reinvestment"): 5}
+
+
+def fetch_nav_all() -> bytes:
+    try:
+        response = requests.get(NAV_ALL_URL, headers=NSE_HEADERS, timeout=40)
+    except requests.RequestException:
+        raise MarketError(
+            "Could not reach AMFI. Check the internet connection and try again."
+        ) from None
+    if response.status_code != 200 or not response.content:
+        raise MarketError("AMFI did not return the scheme NAV file. Try again later.")
+    return response.content
+
+
+def _mf_plan(value: str) -> str:
+    text = (value or "").strip().lower()
+    if text.startswith("direct"):
+        return "Direct"
+    if text.startswith("regular"):
+        return "Regular"
+    return ""
+
+
+def _mf_option(value: str) -> str:
+    text = (value or "").strip().lower()
+    if not text or text == "-":
+        return ""
+    if "reinvest" in text or "bonus" in text:
+        return "IDCW - Reinvestment"
+    if "idcw" in text or "dividend" in text or "income distribution" in text:
+        return "IDCW - Payout"
+    if "growth" in text:
+        return "Growth"
+    return ""
+
+
+def _mf_category(section: str) -> str:
+    text = (section or "").lower()
+    for needle, label in _MF_CATEGORY_RULES:
+        if needle in text:
+            return label
+    return "Other"
+
+
+def ingest_nav_all(data: bytes) -> dict:
+    """Replace the stored scheme list with AMFI's NAV file (one row per variant)."""
+    text = _decode(data)
+    ts = db.now()
+    rows = []
+    amc = "Other"
+    category = "Other"
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if ";" not in line:
+            low = line.lower()
+            if low.startswith(("open ended schemes", "close ended schemes", "interval fund schemes")):
+                inside = line[line.find("(") + 1: line.rfind(")")] if "(" in line else ""
+                category = _mf_category(inside)
+            elif low.endswith("mutual fund"):
+                amc = _AMC_ALIASES.get(low, "Other")
+            continue
+        parts = [part.strip() for part in line.split(";")]
+        if len(parts) < 8:
+            continue
+        code, isin_growth, isin_div, name = parts[0], parts[1], parts[2], parts[3]
+        plan, option = _mf_plan(parts[4]), _mf_option(parts[5])
+        if not code or not name or not plan or not option:
+            continue
+        rows.append((
+            code, name, plan, option, f"{name} - {plan} - {option}", amc, category,
+            None if isin_growth in {"", "-"} else isin_growth,
+            None if isin_div in {"", "-"} else isin_div,
+            _num(parts[6]), _iso_date(parts[7]), ts,
+        ))
+    if not rows:
+        raise ValueError("No mutual fund schemes were found in AMFI's NAV file.")
+    conn = db.get_db()
+    try:
+        conn.execute("DELETE FROM mf_schemes")
+        conn.executemany(
+            """INSERT OR REPLACE INTO mf_schemes
+               (code, name, plan, option, full_name, amc, category, isin_growth,
+                isin_div, nav, nav_date, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        _set_meta(conn, "mf_scheme_count", len(rows), ts)
+        _set_meta(conn, "mf_schemes_updated_at", ts, ts)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    latest = max((row[10] for row in rows if row[10]), default=None)
+    return {
+        "kind": "mf_schemes",
+        "label": "AMFI scheme list",
+        "rows": len(rows),
+        "schemes": len({row[1] for row in rows}),
+        "nav_date": latest,
+    }
+
+
+def sync_schemes() -> dict:
+    return ingest_nav_all(fetch_nav_all())
+
+
+def schemes_stale() -> bool:
+    row = db.query_one("SELECT COUNT(*) AS c, MAX(updated_at) AS u FROM mf_schemes")
+    if not row or not row["c"] or not row["u"]:
+        return True
+    try:
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(row["u"])
+    except ValueError:
+        return True
+    return age > timedelta(hours=SCHEME_STALE_HOURS)
+
+
+def search_schemes(term: str, groups: int = 6) -> list[dict]:
+    """Search AMFI schemes, grouped by scheme with one entry per plan/option variant."""
+    term = (term or "").strip()
+    if len(term) < SEARCH_MIN:
+        return []
+    needle = _like(term)
+    rows = db.query(
+        """SELECT code, name, plan, option, amc, category, isin_growth, isin_div,
+                  nav, nav_date
+           FROM mf_schemes
+           WHERE name LIKE ? ESCAPE '\\' OR amc LIKE ? ESCAPE '\\'
+           ORDER BY CASE WHEN name LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
+                    name, nav_date DESC, nav DESC
+           LIMIT 600""",
+        ("%" + needle + "%", "%" + needle + "%", needle + "%"),
+    )
+    found: dict[tuple, dict] = {}
+    ordered: list[dict] = []
+    for row in rows:
+        key = (row["name"].lower(), (row["amc"] or "").lower())
+        group = found.get(key)
+        if group is None:
+            if len(ordered) >= groups:
+                continue
+            group = {
+                "name": row["name"],
+                "amc": row["amc"] or "",
+                "category": row["category"] or "Other",
+                "variants": [],
+                "seen": set(),
+            }
+            found[key] = group
+            ordered.append(group)
+        marker = (row["plan"], row["option"])
+        if marker in group["seen"]:
+            continue
+        group["seen"].add(marker)
+        group["variants"].append({
+            "code": row["code"],
+            "plan": row["plan"],
+            "option": row["option"],
+            "nav": round(row["nav"], 4) if row["nav"] is not None else None,
+            "nav_date": row["nav_date"],
+            "isin": row["isin_growth"] or row["isin_div"] or "",
+        })
+    for group in ordered:
+        group["variants"].sort(key=lambda v: _VARIANT_ORDER.get((v["plan"], v["option"]), 9))
+        group.pop("seen", None)
+    return ordered
+
 
 
 def status() -> dict:

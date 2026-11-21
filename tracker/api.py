@@ -720,6 +720,15 @@ def search_scrips():
     return jsonify(items=market.search(term))
 
 
+@bp.get("/schemes")
+@login_required
+def search_mf_schemes():
+    term = request.args.get("q", "").strip()
+    if len(term) < market.SEARCH_MIN:
+        return jsonify(items=[], hint="Type at least 3 characters")
+    return jsonify(items=market.search_schemes(term))
+
+
 @bp.get("/market/status")
 @login_required
 def market_status():
@@ -829,6 +838,22 @@ def market_sync():
         parts.append(f"bhavcopy for {bhav['trade_date']} ({bhav['symbols']} scrips)")
     db.log_activity(actor["id"], "imported", "Synced NSE data: " + ", ".join(parts), "market", None)
     return jsonify(result=result, status=market.status())
+
+
+@bp.post("/market/sync-schemes")
+@admin_required
+def market_sync_schemes():
+    actor = current_user()
+    try:
+        result = market.sync_schemes()
+    except (market.MarketError, ValueError) as exc:
+        return jsonify(error=str(exc)), 502
+    db.log_activity(
+        actor["id"], "imported",
+        f"Synced AMFI scheme list ({result['rows']} plan/option variants)", "market", None,
+    )
+    return jsonify(result=result, status=market.status())
+
 
 
 # ---------------------------------------------------------------- investments

@@ -104,6 +104,16 @@ def _start_market_autosync(app: Flask, test_config: dict | None) -> None:
     def _run() -> None:
         with app.app_context():
             try:
+                if market.schemes_stale():
+                    summary = market.sync_schemes()
+                    print(
+                        f"DeepTrack AMFI scheme sync complete: {summary['rows']} variants, "
+                        f"NAV dated {summary.get('nav_date')}",
+                        flush=True,
+                    )
+            except Exception as exc:  # noqa: BLE001 - scheme list is a convenience
+                print(f"DeepTrack AMFI scheme sync skipped: {exc}", flush=True)
+            try:
                 if not market.is_stale():
                     return
                 summary = market.sync_nse()

@@ -129,6 +129,23 @@ CREATE TABLE IF NOT EXISTS market_meta (
     value      TEXT,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS mf_schemes (
+    code        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    plan        TEXT NOT NULL,
+    option      TEXT NOT NULL,
+    full_name   TEXT NOT NULL,
+    amc         TEXT,
+    category    TEXT,
+    isin_growth TEXT,
+    isin_div    TEXT,
+    nav         REAL,
+    nav_date    TEXT,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mf_schemes_name ON mf_schemes (name COLLATE NOCASE);
 """
 
 
