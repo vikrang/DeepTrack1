@@ -918,6 +918,8 @@ function renderInvestments() {
 
     <div id="bulk-bar" class="bulk-bar hidden" role="status"></div>
 
+    ${folioPanelHtml(collectFolios(all))}
+
     <div class="card table-card">
       <div class="table-wrap">
         <table class="table">
@@ -1061,6 +1063,95 @@ function formatFieldValue(field, value) {
   return String(value);
 }
 
+/* ---- Customer folios: deposits a company maps to one customer ID ---- */
+
+function collectFolios(items) {
+  const groups = new Map();
+  (items || []).forEach((item) => {
+    const customerId = String(item.details?.customer_id || "").trim();
+    if (!customerId) return;
+    const company = String(item.details?.company_name || item.details?.bank || "").trim();
+    const key = `${company.toLowerCase()}::${customerId.toLowerCase()}`;
+    if (!groups.has(key)) {
+      groups.set(key, { key, customerId, company, items: [], invested: 0, value: 0 });
+    }
+    const group = groups.get(key);
+    group.items.push(item);
+    group.invested += Number(item.invested_amount) || 0;
+    group.value += Number(item.current_value) || 0;
+  });
+  return [...groups.values()].sort((a, b) => b.value - a.value);
+}
+
+function folioPanelHtml(folios) {
+  if (!folios.length) return "";
+  return `
+    <section class="card card-pad folio-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Customer folios</div>
+          <div class="card-sub">Deposits grouped under one customer ID — open a folio for the breakup</div>
+        </div>
+      </div>
+      <div class="folio-grid">
+        ${folios.map((folio) => `
+          <button type="button" class="folio-tile" data-action="open-folio" data-folio="${esc(folio.key)}">
+            <span class="folio-id">${esc(folio.customerId)}</span>
+            <span class="folio-company">${esc(folio.company || "—")}</span>
+            <span class="folio-meta">${folio.items.length} deposit${folio.items.length === 1 ? "" : "s"} · ${compactMoney(folio.value)}</span>
+            <span class="folio-sub">Invested ${compactMoney(folio.invested)}</span>
+          </button>`).join("")}
+      </div>
+    </section>`;
+}
+
+function openFolioDrawer(key) {
+  const folio = collectFolios(state.investments).find((f) => f.key === key);
+  if (!folio) return;
+  const gain = folio.value - folio.invested;
+  const gainPct = folio.invested ? (gain / folio.invested) * 100 : 0;
+  const rows = folio.items.slice()
+    .sort((a, b) => String(a.start_date || "").localeCompare(String(b.start_date || "")))
+    .map((item) => `
+      <tr data-investment-id="${item.id}">
+        <td class="name-cell">
+          <strong>${esc(item.name)}</strong>
+          <div class="sub">${esc(item.type_label)} · ${esc(item.owner)}</div>
+        </td>
+        <td>${fmtDate(item.start_date)}</td>
+        <td class="num">${inr(item.invested_amount)}</td>
+        <td class="num">${inr(item.current_value)}</td>
+      </tr>`).join("");
+  openDrawer(`
+    <div class="drawer-head">
+      <div class="dh-main">
+        <h3>Customer ID ${esc(folio.customerId)}</h3>
+        <div class="dh-sub"><span class="chip">${esc(folio.company || "—")}</span><span>${folio.items.length} deposit${folio.items.length === 1 ? "" : "s"}</span></div>
+      </div>
+      <button class="icon-btn" type="button" data-drawer-close aria-label="Close">${icon("close")}</button>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-hero">
+        <div class="dh-label">Value under this folio</div>
+        <div class="dh-value">${inr2(folio.value)}</div>
+        <div class="dh-row">
+          <div class="dh-item"><div class="k">Invested</div><div class="v">${inr2(folio.invested)}</div></div>
+          <div class="dh-item"><div class="k">Gain / loss</div><div class="v" style="color:${gain >= 0 ? "var(--ok)" : "var(--bad)"}">${gain >= 0 ? "+" : "−"}${inr2(Math.abs(gain))}</div></div>
+          <div class="dh-item"><div class="k">Return</div><div class="v" style="color:${gain >= 0 ? "var(--ok)" : "var(--bad)"}">${pctText(gainPct)}</div></div>
+        </div>
+      </div>
+      <div class="section-label">Breakup</div>
+      <div class="table-wrap">
+        <table class="table" style="min-width:0">
+          <thead><tr><th>Deposit</th><th>Date</th><th class="num">Principal</th><th class="num">Value</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:8px">Each deposit stands on its own — a fresh contribution is added as a separate deposit, never merged into an existing one.</p>
+    </div>`);
+}
+
+
 /* ============================================================
    Investment drawer
    ============================================================ */
@@ -1070,6 +1161,9 @@ function openInvestmentDrawer(id) {
   if (!item) return;
   const meta = typeMeta(item.type);
   const admin = isAdmin();
+  const folio = item.details?.customer_id
+    ? collectFolios(state.investments).find((f) => f.items.some((x) => x.id === item.id))
+    : null;
   const details = (meta?.fields || []).filter((f) => f.key !== "demat_id").map((f) => {
     const value = item.details?.[f.key];
     const wide = f.wide || String(value || "").length > 36;
@@ -1106,6 +1200,10 @@ function openInvestmentDrawer(id) {
         <div class="dl-item"><div class="k">Record ID</div><div class="v mono">${esc(item.public_id || "—")}</div></div>
         <div class="dl-item wide"><div class="k">Last updated</div><div class="v">${timeAgo(item.updated_at)}</div></div>
       </div>
+      ${folio && folio.items.length > 1 ? `
+        <button class="btn btn-secondary btn-block" type="button" data-action="open-folio" data-folio="${esc(folio.key)}" style="margin-top:14px">
+          View all ${folio.items.length} deposits under ${esc(folio.customerId)}
+        </button>` : ""}
       ${item.type === "ppf" ? ppfLedgerHtml(item) : ""}
     </div>
     <div class="drawer-foot">
@@ -3192,6 +3290,9 @@ async function handleClick(event) {
     case "edit-investment":
       closeDrawer();
       openInvestmentModal(id);
+      break;
+    case "open-folio":
+      openFolioDrawer(actionEl.dataset.folio);
       break;
     case "delete-investment":
       closeDrawer();

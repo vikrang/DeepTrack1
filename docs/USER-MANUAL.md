@@ -242,6 +242,11 @@ that's what feeds the Dashboard's *Monthly SIPs* card.
 **Recurring deposits (RD)** — Enter **Monthly deposit** and the **Tenor**. DeepTrack totals
 the deposits over the months and computes maturity.
 
+> **Customer ID / folio.** The same company often maps several deposits to one customer ID.
+> Fill **Customer ID / folio** on each FD or RD and they're clubbed on the Investments page
+> under *Customer folios* — open the tile to see every deposit's date, principal and value.
+> Deposits never merge: a new contribution is always a separate deposit with its own row.
+
 **Bonds & G-Secs** — Enter **Issuer**, **Bond type**, **ISIN**, **Coupon rate** and **Maturity date**.
 
 **PPF** — Enter the **Account number** and **Interest rate**. The **Contributions** list holds

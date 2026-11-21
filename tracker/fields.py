@@ -220,6 +220,8 @@ _TYPES = [
             f("company_name", "Company name", placeholder="e.g. Bajaj Finance",
               help="For company or NBFC deposits: who issued the deposit"),
             f("account_no", "FD account / receipt no.", placeholder="e.g. 3270456123"),
+            f("customer_id", "Customer ID / folio", placeholder="e.g. SR-4471203",
+              help="Deposits under the same customer ID and company are grouped into one folio."),
             f("principal", "Principal", "number", unit="₹", required=True, table=True, min=0),
             f("interest_rate", "Interest rate", "number", unit="%", required=True, table=True, min=0, max=20),
             f("tenor_years", "Tenor years", "number", min=0, max=50),
@@ -250,6 +252,8 @@ _TYPES = [
         "fields": [
             f("bank", "Bank / post office", "select", options=BANKS, required=True),
             f("account_no", "RD account number"),
+            f("customer_id", "Customer ID / folio", placeholder="e.g. RD-889201",
+              help="Deposits under the same customer ID and bank are grouped into one folio."),
             f("monthly_amount", "Monthly deposit", "number", unit="₹", required=True, table=True, min=0),
             f("interest_rate", "Interest rate", "number", unit="%", required=True, min=0, max=20),
             f("tenor_years", "Tenor years", "number", min=0, max=50),
