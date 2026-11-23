@@ -15,7 +15,7 @@ import requests
 from flask import Blueprint, g, jsonify, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import broker, config, corporate, db, excelio, fields, firebase, market, seed, services
+from . import broker, config, corporate, db, excelio, fields, firebase, market, seed, services, transactions
 from .validators import (
     parse_date,
     parse_number,
@@ -976,6 +976,129 @@ def get_investment(item_id: int):
     if not rows:
         return jsonify(error="Investment not found"), 404
     return jsonify(investment=services.investment_payload(rows[0]))
+
+
+def _scrip_matches(report_name: str, item_name: str, symbol: str) -> bool:
+    def norm(value):
+        text = re.sub(r"[^a-z0-9 ]", " ", str(value or "").lower())
+        return " ".join(text.replace(" limited", " ltd").split())
+    report = norm(report_name)
+    item = norm(item_name)
+    if not report or not item:
+        return True
+    if report == item or report in item or item in report:
+        return True
+    ticker = norm(symbol)
+    return bool(ticker and ticker in report.split())
+
+
+@bp.post("/investments/<int:item_id>/transactions/import")
+@admin_required
+def import_transactions(item_id: int):
+    actor = current_user()
+    item = db.query_one("SELECT * FROM investments WHERE id = ?", (item_id,))
+    if item is None:
+        return jsonify(error="Investment not found"), 404
+    if item["type"] not in services.TXN_TYPES:
+        return jsonify(error="Transactions are available for stocks, ETFs and mutual funds"), 400
+
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify(error="Choose the scrip's transactions report to upload"), 400
+    blob = upload.read()
+    if not blob:
+        return jsonify(error="That file is empty. Download the report again."), 400
+
+    try:
+        parsed = transactions.parse_transactions(blob, upload.filename)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 422
+
+    details = {}
+    try:
+        details = json.loads(item["details"] or "{}")
+    except (TypeError, ValueError):
+        pass
+    matches = _scrip_matches(parsed["scrip"], item["name"], details.get("symbol", ""))
+    warning = ""
+    if parsed["scrip"] and not matches:
+        warning = (
+            f"This report is for {parsed['scrip']}, but the holding is {item['name']}. "
+            "Check you picked the right scrip's file."
+        )
+
+    existing = {
+        row["fingerprint"]
+        for row in db.query("SELECT fingerprint FROM transactions WHERE investment_id = ?", (item_id,))
+    }
+    fresh = [row for row in parsed["rows"] if row["fingerprint"] not in existing]
+    commit = str(request.form.get("commit") or "") in ("1", "true", "yes")
+    buys = sum(1 for row in parsed["rows"] if row["kind"] == "buy")
+    dates = sorted(row["trade_date"] for row in parsed["rows"])
+
+    if not commit:
+        return jsonify(
+            scrip=parsed["scrip"],
+            matches=matches,
+            warning=warning,
+            rows=len(parsed["rows"]),
+            new=len(fresh),
+            duplicates=len(parsed["rows"]) - len(fresh),
+            skipped=parsed["skipped"],
+            buys=buys,
+            sells=len(parsed["rows"]) - buys,
+            first_date=dates[0],
+            last_date=dates[-1],
+            preview=[
+                {key: row[key] for key in ("trade_date", "kind", "quantity", "price", "value", "trade_type")}
+                for row in fresh[:8]
+            ],
+        )
+
+    if warning and not matches:
+        return jsonify(error=warning), 422
+
+    now = db.now()
+    conn = db.get_db()
+    imported = 0
+    for row in fresh:
+        cursor = conn.execute(
+            """INSERT OR IGNORE INTO transactions
+               (investment_id, trade_date, kind, quantity, price, value, product, trade_type,
+                source, fingerprint, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                item_id, row["trade_date"], row["kind"], row["quantity"], row["price"], row["value"],
+                row["product"], row["trade_type"], "kotak", row["fingerprint"], actor["id"], now,
+            ),
+        )
+        imported += cursor.rowcount
+    conn.commit()
+    if imported:
+        db.log_activity(
+            actor["id"], "imported",
+            f"Imported {imported} transaction(s) for {item['name']}", "investment", item_id,
+        )
+    updated = db.query_one("SELECT * FROM investments WHERE id = ?", (item_id,))
+    return jsonify(
+        imported=imported,
+        duplicates=len(parsed["rows"]) - len(fresh),
+        investment=services.investment_payload(updated),
+    )
+
+
+@bp.delete("/transactions/<int:txn_id>")
+@admin_required
+def delete_transaction(txn_id: int):
+    actor = current_user()
+    row = db.query_one("SELECT * FROM transactions WHERE id = ?", (txn_id,))
+    if row is None:
+        return jsonify(error="Transaction not found"), 404
+    db.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
+    item = db.query_one("SELECT name FROM investments WHERE id = ?", (row["investment_id"],))
+    name = item["name"] if item else "a holding"
+    db.log_activity(actor["id"], "deleted", f"Removed a transaction from {name}", "investment", row["investment_id"])
+    return jsonify(ok=True, investment_id=row["investment_id"])
 
 
 @bp.post("/investments")

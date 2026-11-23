@@ -425,6 +425,45 @@ earns from the next month, as in a passbook. Leave the amounts blank; type your 
    then **Holding details** — every field, the **Owner**, the purchase date, a unique
    **Record ID** (like `DT-7K4M-9QX2`) and when it was last updated.
 
+### Transactions and realised vs unrealised gain (stocks, ETFs and equity funds)
+
+Open a **stock**, **ETF** or **mutual fund** holding and its drawer carries a
+**Transactions** section below the holding details.
+
+**Importing the trades.** Admins click **Import Kotak per-scrip report** and pick the
+file downloaded from Kotak Neo → **Reports → Equity → Portfolio Transactions** for that
+one scrip. Choose a date range that covers every trade from the first buy. DeepTrack
+shows a preview — trades found, how many are new, how many were already imported — and
+only writes them after you confirm. Anything with intraday or F&O product types is
+skipped. The file names its scrip, so if you attach the wrong scrip's file a warning
+appears and nothing is imported.
+
+**What you see.** Each row shows the date, a **BUY**/**SELL** chip, quantity × price,
+trade value, and — on sells — the realised gain for that sell. The top of the drawer
+splits the gain into two numbers instead of one:
+
+| Tile | What it means |
+| --- | --- |
+| **Realised · FIFO** | Profit already booked on units you sold, matching the **oldest buys first** (First-In, First-Out). |
+| **Unrealised** | Profit still sitting in the units you hold: current value minus what those remaining units cost. |
+
+**Worked example.** Buy 100 shares at ₹400 (₹40,000), buy another 100 at ₹500
+(₹50,000), then sell 100 at ₹600. FIFO sells the first lot: realised =
+100 × (₹600 − ₹400) = **₹20,000**. The remaining 100 shares cost ₹50,000; if the
+holding is now worth ₹55,000, unrealised = ₹55,000 − ₹50,000 = **₹5,000**.
+
+Two safeguards matter:
+
+- **Re-importing is safe.** Every trade gets a fingerprint; a repeated file or overlapping
+  date range only adds trades that are genuinely new.
+- **Quantity must agree.** If the trades in DeepTrack add up to a different quantity than
+  the holding records (say you imported a partial history), unrealised gain shows **—**
+  and a note explains that the history and the quantity disagree. Import the full history
+  or correct the quantity — then the figure appears.
+
+Admins can remove a single trade with its trash icon; realised and unrealised figures
+recalculate immediately.
+
 ### Edit
 
 1. Open the holding (as above) and click **Edit** — or click the pencil icon on its row.

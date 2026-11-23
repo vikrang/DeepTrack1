@@ -54,6 +54,26 @@ CREATE INDEX IF NOT EXISTS idx_investments_owner ON investments (owner_id);
 CREATE INDEX IF NOT EXISTS idx_investments_category ON investments (category);
 CREATE INDEX IF NOT EXISTS idx_investments_type ON investments (type);
 
+CREATE TABLE IF NOT EXISTS transactions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    investment_id   INTEGER NOT NULL REFERENCES investments (id) ON DELETE CASCADE,
+    trade_date      TEXT    NOT NULL,
+    kind            TEXT    NOT NULL CHECK (kind IN ('buy', 'sell')),
+    quantity        REAL    NOT NULL,
+    price           REAL    NOT NULL,
+    value           REAL    NOT NULL DEFAULT 0,
+    product         TEXT,
+    trade_type      TEXT,
+    source          TEXT    NOT NULL DEFAULT 'kotak',
+    fingerprint     TEXT    NOT NULL,
+    created_by      INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    created_at      TEXT    NOT NULL,
+    UNIQUE (investment_id, fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_investment
+    ON transactions (investment_id, trade_date);
+
 CREATE TABLE IF NOT EXISTS activity (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER REFERENCES users (id) ON DELETE SET NULL,

@@ -15,6 +15,7 @@ const esc = (value) =>
 const nf = (digits = 0) => new Intl.NumberFormat("en-IN", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 const inr = (n) => "₹" + nf(0).format(Math.round(Number(n) || 0));
 const inr2 = (n) => "₹" + nf(2).format(Number(n) || 0);
+const TXN_TYPES = new Set(["stocks", "etf", "mutual_funds"]);
 
 function compactMoney(n) {
   const value = Number(n) || 0;
@@ -2312,6 +2313,56 @@ function investmentIncomeHtml(item) {
     </div>`;
 }
 
+function transactionsSectionHtml(item) {
+  if (!TXN_TYPES.has(item.type)) return "";
+  const rows = item.transactions || [];
+  const admin = isAdmin();
+  const signed = (value) => value == null ? "—" : `${value >= 0 ? "+" : "−"}${inr2(Math.abs(value))}`;
+  const tone = (value) => value == null ? "inherit" : value >= 0 ? "var(--ok)" : "var(--bad)";
+  const actions = admin ? `
+    <div class="txn-actions">
+      <button class="btn btn-secondary btn-block btn-sm" type="button" data-action="txn-import" data-id="${item.id}">${icon("upload")} Import Kotak per-scrip report</button>
+      <input type="file" id="txn-file-${item.id}" accept=".xlsx,.xlsm,.csv" hidden>
+    </div>` : "";
+  const hint = `<p class="txn-hint">Kotak Neo → Reports → Equity → Portfolio Transactions, one scrip per file, with a date range that covers every trade. Re-importing the same file is safe — duplicate rows are skipped.</p>`;
+  if (!rows.length) {
+    return `<div class="section-label">Transactions</div>
+      <div class="txn-card">
+        <p class="muted small" style="margin:0">Import the scrip's transaction report to see every trade here, with realised (FIFO) and unrealised gains.</p>
+        ${actions}
+        ${hint}
+      </div>`;
+  }
+  const list = rows.map((row) => {
+    const sell = row.kind === "sell";
+    return `<div class="txn-row">
+      <div class="txn-main">
+        <span class="txn-chip ${sell ? "sell" : "buy"}">${sell ? "SELL" : "BUY"}</span>
+        <span class="txn-date">${fmtDate(row.trade_date)}</span>
+        <span class="txn-qty">${nf(4).format(row.quantity)} × ${inr2(row.price)}</span>
+      </div>
+      <div class="txn-side">
+        <span class="txn-value">${inr2(row.value)}</span>
+        ${sell ? `<span class="txn-realized" style="color:${tone(row.realized)}">${signed(row.realized)}</span>` : ""}
+        ${admin ? `<button class="icon-btn txn-del" type="button" data-action="txn-delete" data-id="${row.id}" data-investment="${item.id}" title="Remove this transaction" aria-label="Remove this transaction">${icon("trash")}</button>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  return `<div class="section-label">Transactions <span class="section-count">${rows.length}</span></div>
+    <div class="txn-card">
+      <div class="txn-summary">
+        <div><span>Realised · FIFO</span><strong style="color:${tone(item.realized_gain)}">${signed(item.realized_gain)}</strong></div>
+        <div><span>Unrealised</span><strong style="color:${tone(item.unrealized_gain)}">${signed(item.unrealized_gain)}</strong></div>
+        ${item.txn_remaining_qty != null ? `<div><span>Units in history</span><strong>${nf(4).format(item.txn_remaining_qty)}</strong></div>` : ""}
+      </div>
+      ${!item.txn_qty_matches ? `<div class="txn-warn">History holds ${nf(4).format(item.txn_remaining_qty || 0)} units but the holding records ${item.txn_held_qty == null ? "no quantity" : nf(4).format(item.txn_held_qty)}. Unrealised gain is shown only when they agree.</div>` : ""}
+      ${item.txn_incomplete ? `<div class="txn-warn">A sell exceeds the units bought in this history, so realised gain covers only the matched lots.</div>` : ""}
+      <div class="txn-list">${list}</div>
+      ${actions}
+      ${hint}
+    </div>`;
+}
+
 function openInvestmentDrawer(id) {
   const item = state.investments.find((i) => i.id === id);
   if (!item) return;
@@ -2320,6 +2371,9 @@ function openInvestmentDrawer(id) {
   const folio = item.details?.customer_id
     ? collectFolios(state.investments).find((f) => f.items.some((x) => x.id === item.id))
     : null;
+  const hasTxns = (item.transactions_count || 0) > 0;
+  const signedMoney = (value) => value == null ? "—" : `${value >= 0 ? "+" : "−"}${inr2(Math.abs(value))}`;
+  const moneyColor = (value) => value >= 0 ? "var(--ok)" : "var(--bad)";
   const details = (meta?.fields || []).filter((f) => f.key !== "demat_id").map((f) => {
     const value = item.details?.[f.key];
     const wide = f.wide || String(value || "").length > 36;
@@ -2350,8 +2404,13 @@ function openInvestmentDrawer(id) {
         </div>` : ""}
         <div class="dh-row">
           <div class="dh-item"><div class="k">Invested</div><div class="v">${inr2(item.invested_amount)}</div></div>
-          <div class="dh-item"><div class="k">Gain / loss</div><div class="v" style="color:${item.display_gain >= 0 ? "var(--ok)" : "var(--bad)"}">${item.display_gain >= 0 ? "+" : "−"}${inr2(Math.abs(item.display_gain))}</div></div>
-          <div class="dh-item"><div class="k">Return</div><div class="v" style="color:${item.display_gain >= 0 ? "var(--ok)" : "var(--bad)"}">${pctText(item.display_gain_pct)}</div></div>
+          ${hasTxns ? `
+          <div class="dh-item"><div class="k">Realised · FIFO</div><div class="v" style="color:${moneyColor(item.realized_gain)}">${signedMoney(item.realized_gain)}</div></div>
+          <div class="dh-item"><div class="k">Unrealised</div><div class="v" style="color:${item.unrealized_gain == null ? "inherit" : moneyColor(item.unrealized_gain)}">${signedMoney(item.unrealized_gain)}</div></div>
+          ` : `
+          <div class="dh-item"><div class="k">Gain / loss</div><div class="v" style="color:${moneyColor(item.display_gain)}">${item.display_gain >= 0 ? "+" : "−"}${inr2(Math.abs(item.display_gain))}</div></div>
+          `}
+          <div class="dh-item"><div class="k">Return</div><div class="v" style="color:${moneyColor(item.display_gain)}">${pctText(item.display_gain_pct)}</div></div>
         </div>
       </div>
       <div class="section-label">Holding details</div>
@@ -2363,6 +2422,7 @@ function openInvestmentDrawer(id) {
         <div class="dl-item wide"><div class="k">Last updated</div><div class="v">${timeAgo(item.updated_at)}</div></div>
       </div>
       ${investmentIncomeHtml(item)}
+      ${transactionsSectionHtml(item)}
       ${folio && folio.items.length > 1 ? `
         <button class="btn btn-secondary btn-block" type="button" data-action="open-folio" data-folio="${esc(folio.key)}" style="margin-top:14px">
           View all ${folio.items.length} deposits under ${esc(folio.customerId)}
@@ -4608,6 +4668,105 @@ async function uploadBroker(file) {
   }
 }
 
+function pickTransactionFile(id) {
+  const input = $(`#txn-file-${id}`);
+  if (!input) return;
+  input.onchange = () => {
+    const file = input.files?.[0];
+    input.value = "";
+    if (file) previewTransactionImport(id, file);
+  };
+  input.click();
+}
+
+async function previewTransactionImport(id, file) {
+  if (!/\.(xlsx|xlsm|csv)$/i.test(file.name)) {
+    toast("Choose the scrip's .xlsx or .csv report", "error");
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const data = await api(`/investments/${id}/transactions/import`, { method: "POST", form });
+    openTransactionPreview(id, file, data);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+function openTransactionPreview(id, file, data) {
+  const item = state.investments.find((i) => i.id === id);
+  const total = data.new || 0;
+  const rows = (data.preview || []).map((row) => `
+    <div class="txn-preview-row">
+      <span class="txn-chip ${row.kind}">${row.kind === "sell" ? "SELL" : "BUY"}</span>
+      <span class="txn-date">${fmtDate(row.trade_date)}</span>
+      <span class="txn-qty">${nf(4).format(row.quantity)} × ${inr2(row.price)}</span>
+      <strong class="txn-value">${inr2(row.value)}</strong>
+    </div>`).join("");
+  const body = `
+    <div class="txn-import-facts">
+      <div><span>Scrip in report</span><strong>${esc(data.scrip || "—")}</strong></div>
+      <div><span>Trades found</span><strong>${data.rows}</strong></div>
+      <div><span>New</span><strong>${total}</strong></div>
+      <div><span>Already imported</span><strong>${data.duplicates}</strong></div>
+    </div>
+    ${data.warning ? `<div class="form-error">${esc(data.warning)}</div>` : ""}
+    ${data.skipped ? `<p class="muted small">${data.skipped} row${data.skipped === 1 ? "" : "s"} skipped — intraday, F&amp;O or missing data.</p>` : ""}
+    ${data.rows ? `<p class="muted small">${data.buys} buy · ${data.sells} sell · ${fmtDate(data.first_date)} to ${fmtDate(data.last_date)}</p>` : `<p class="muted small">No transactions were found in this file.</p>`}
+    ${rows ? `<div class="txn-preview-list">${rows}</div>` : ""}
+    ${total > (data.preview || []).length ? `<p class="muted small">Showing the first ${(data.preview || []).length} of ${total} new rows.</p>` : ""}
+  `;
+  const label = `Import ${total} transaction${total === 1 ? "" : "s"}`;
+  openModal({
+    title: "Import transactions",
+    subtitle: `${esc(item?.name || "Holding")} — ${esc(file.name)}`,
+    size: "md",
+    body,
+    footer: `<button class="btn btn-secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="button" id="txn-commit" ${!total || !data.matches ? "disabled" : ""}>${label}</button>`,
+    onMount: (backdrop, close) => {
+      backdrop.querySelector("#txn-commit")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "Importing…";
+        const form = new FormData();
+        form.append("file", file);
+        form.append("commit", "1");
+        try {
+          const result = await api(`/investments/${id}/transactions/import`, { method: "POST", form });
+          close();
+          toast(`${result.imported} transaction${result.imported === 1 ? "" : "s"} imported`, "ok");
+          await refreshData();
+          openInvestmentDrawer(id);
+        } catch (error) {
+          toast(error.message, "error");
+          button.disabled = false;
+          button.textContent = label;
+        }
+      });
+    },
+  });
+}
+
+async function deleteTransactionEntry(transactionId, investmentId) {
+  const item = state.investments.find((i) => i.id === investmentId);
+  const row = (item?.transactions || []).find((t) => t.id === transactionId);
+  const message = row && item
+    ? `Removes the ${row.kind.toUpperCase()} of ${nf(4).format(row.quantity)} on ${fmtDate(row.trade_date)} from ${esc(item.name)}. Realised and unrealised gains recalculate.`
+    : "This transaction will be removed and gains recalculated.";
+  const ok = await confirmDialog({ title: "Remove this transaction?", message });
+  if (!ok) return;
+  try {
+    await api(`/transactions/${transactionId}`, { method: "DELETE" });
+    toast("Transaction removed", "ok");
+    await refreshData();
+    openInvestmentDrawer(investmentId);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
 function importPreviewHtml(data) {
   const rows = data.preview || [];
   const issues = (row) => {
@@ -4911,6 +5070,12 @@ async function handleClick(event) {
       break;
     case "record-income":
       openIncomeModal(id);
+      break;
+    case "txn-import":
+      pickTransactionFile(id);
+      break;
+    case "txn-delete":
+      await deleteTransactionEntry(id, Number(actionEl.dataset.investment));
       break;
     case "fetch-corporate":
       await fetchCorporateActions();

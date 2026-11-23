@@ -49,6 +49,56 @@ def _row_dict(row) -> dict:
     return dict(row) if row is not None else {}
 
 
+TXN_TYPES = {"stocks", "etf", "mutual_funds"}
+
+
+def _transaction_rows(investment_id: int) -> list:
+    return [
+        dict(row) for row in db.query(
+            "SELECT * FROM transactions WHERE investment_id = ? ORDER BY trade_date, id",
+            (investment_id,),
+        )
+    ]
+
+
+def _fifo_gains(rows: list) -> dict:
+    """FIFO cost basis over buy/sell rows: realised, remaining units and cost."""
+    lots = []
+    realized = 0.0
+    incomplete = False
+    gains = []
+    for row in rows:
+        qty = float(row["quantity"] or 0)
+        unit = float(row["price"] or 0)
+        if row["kind"] == "buy":
+            lots.append([qty, unit])
+            gains.append(None)
+            continue
+        proceeds = float(row["value"] or 0) or qty * unit
+        left = qty
+        cost = 0.0
+        while left > 1e-9 and lots:
+            lot = lots[0]
+            take = min(lot[0], left)
+            cost += take * lot[1]
+            lot[0] -= take
+            left -= take
+            if lot[0] <= 1e-9:
+                lots.pop(0)
+        if left > 1e-9:
+            incomplete = True
+        gain = proceeds - cost
+        realized += gain
+        gains.append(round(gain, 2))
+    return {
+        "realized": round(realized, 2),
+        "remaining_qty": round(sum(lot[0] for lot in lots), 4),
+        "remaining_cost": round(sum(lot[0] * lot[1] for lot in lots), 2),
+        "incomplete": incomplete,
+        "gains": gains,
+    }
+
+
 def user_payload(row, viewer) -> dict:
     data = _row_dict(row)
     privileged = bool(viewer) and (viewer["role"] == "admin" or viewer["id"] == data["id"])
@@ -90,6 +140,40 @@ def investment_payload(row) -> dict:
     )
     display = current if effective is None else float(effective)
     display_gain = display - invested
+    txn_list = []
+    realized_gain = None
+    unrealized_gain = None
+    txn_meta = {}
+    if data.get("type") in TXN_TYPES:
+        txn_rows = _transaction_rows(data["id"])
+        if txn_rows:
+            fifo = _fifo_gains(txn_rows)
+            gains = fifo["gains"]
+            held = details.get("quantity") if data.get("type") in ("stocks", "etf") else details.get("units")
+            held = float(held) if isinstance(held, (int, float)) else None
+            matches = held is None or abs(held - fifo["remaining_qty"]) <= max(0.01, abs(held) * 0.001)
+            realized_gain = fifo["realized"]
+            unrealized_gain = round(display - fifo["remaining_cost"], 2) if matches else None
+            txn_meta = {
+                "txn_remaining_qty": fifo["remaining_qty"],
+                "txn_held_qty": held,
+                "txn_incomplete": fifo["incomplete"],
+                "txn_qty_matches": matches,
+            }
+            txn_list = [
+                {
+                    "id": row["id"],
+                    "trade_date": row["trade_date"],
+                    "kind": row["kind"],
+                    "quantity": row["quantity"],
+                    "price": row["price"],
+                    "value": row["value"],
+                    "trade_type": row.get("trade_type") or "",
+                    "source": row.get("source") or "",
+                    "realized": gains[idx],
+                }
+                for idx, row in reversed(list(enumerate(txn_rows)))
+            ]
     maturity_date = str(details.get("maturity_date") or "")
     maturity_value = None
     if maturity_date:
@@ -124,6 +208,11 @@ def investment_payload(row) -> dict:
         "display_gain": round(display_gain, 2),
         "display_gain_pct": round(display_gain / invested * 100, 2) if invested else 0.0,
         "value_note": value_note,
+        "transactions": txn_list,
+        "transactions_count": len(txn_list),
+        "realized_gain": realized_gain,
+        "unrealized_gain": unrealized_gain,
+        **txn_meta,
         "maturity_date": maturity_date,
         "maturity_value": maturity_value,
         "start_date": data.get("start_date") or "",
