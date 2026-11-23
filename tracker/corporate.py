@@ -15,6 +15,7 @@ from urllib.parse import quote
 import requests
 
 from . import db
+from .services import fiscal_year_label
 from .validators import parse_number
 
 NSE_HOME = "https://www.nseindia.com/"
@@ -335,22 +336,42 @@ def _fetch_window(symbols: set[str], start: date, end: date, years: int):
     return by_symbol, errors
 
 
-def collect(years: int = 1) -> dict:
-    years = max(1, min(int(years or 1), 10))
+def fiscal_year_window(fy: int | None = None, span: int = 1,
+                       today: date | None = None) -> tuple[date, date, int, int]:
+    """Indian financial-year fetch window: 1 April to 31 March, labelled by the closing year."""
+    today = today or date.today()
+    end_fy = int(fy) if fy else today.year + (1 if today.month >= 4 else 0)
+    span = max(1, min(int(span or 1), 10))
+    start = date(end_fy - span, 4, 1)
+    end = min(date(end_fy, 3, 31), today)
+    return start, end, end_fy, span
+
+
+def fiscal_window_label(end_fy: int, span: int) -> str:
+    if span == 1:
+        return fiscal_year_label(end_fy)
+    return f"{fiscal_year_label(end_fy - span + 1)} to {fiscal_year_label(end_fy)}"
+
+
+def collect(fy: int | None = None, span: int = 1) -> dict:
     today = date.today()
-    start = today - timedelta(days=365 * years)
+    start, end, end_fy, span = fiscal_year_window(fy, span, today)
+    label = fiscal_window_label(end_fy, span)
+    history_years = max(1, -(-(today - start).days // 365))
+    window = {"fy": end_fy, "span": span, "label": label,
+              "from": start.isoformat(), "to": end.isoformat()}
     holdings = _holdings()
     if not holdings:
         return {
             "items": [],
             "count": 0,
             "message": "Add at least one stock or ETF holding with a symbol to fetch corporate actions.",
-            "window": {"years": years, "from": start.isoformat(), "to": today.isoformat()},
+            "window": window,
             "errors": [],
         }
 
     symbols = {h["symbol"] for h in holdings}
-    by_symbol, errors = _fetch_window(symbols, start, today, years)
+    by_symbol, errors = _fetch_window(symbols, start, end, history_years)
     applied_rows = db.query("SELECT investment_id, kind, ex_date, detail FROM corporate_actions")
     applied = {
         (row["investment_id"], row["kind"], row["ex_date"], row["detail"]) for row in applied_rows
@@ -415,7 +436,7 @@ def collect(years: int = 1) -> dict:
         "dividend_amount": round(sum(item["effect"] or 0 for item in dividends), 2),
         "bonus_count": len(bonuses),
         "message": message,
-        "window": {"years": years, "from": start.isoformat(), "to": today.isoformat()},
+        "window": window,
         "errors": errors[:6],
     }
 

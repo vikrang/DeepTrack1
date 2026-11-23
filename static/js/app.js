@@ -842,6 +842,10 @@ function fyLabel(year) {
   return `FY ${value - 1}-${String(value).slice(-2)}`;
 }
 
+function fiscalYearEnding(now = new Date()) {
+  return now.getFullYear() + (now.getMonth() >= 3 ? 1 : 0);
+}
+
 function renderDashboard() {
   const dash = state.dashboard;
   if (!dash) {
@@ -1253,6 +1257,13 @@ function bankCard() {
 
 function corporateCard() {
   const holdings = state.investments.filter((i) => i.type === "stocks" || i.type === "etf");
+  const endFy = fiscalYearEnding();
+  const windows = [
+    `${endFy}:1|${fyLabel(endFy)} · this financial year`,
+    `${endFy - 1}:1|${fyLabel(endFy - 1)} · previous financial year`,
+    `${endFy}:3|Last 3 FYs · ${fyLabel(endFy - 2)} to ${fyLabel(endFy)}`,
+    `${endFy}:5|Last 5 FYs · ${fyLabel(endFy - 4)} to ${fyLabel(endFy)}`,
+  ];
   return `
     <section class="card card-pad span-5 corp-card">
       <div class="card-head">
@@ -1275,16 +1286,17 @@ function corporateCard() {
         <li>${icon("check", "sm")} Review and tick before anything is applied</li>
       </ul>
       <div class="corp-controls">
-        <select class="select-compact" id="corp-years" aria-label="Lookback window">
-          <option value="1">Last 1 year</option>
-          <option value="2">Last 2 years</option>
-          <option value="3">Last 3 years</option>
-          <option value="5">Last 5 years</option>
+        <select class="select-compact" id="corp-window" aria-label="Financial year window">
+          ${windows.map((entry) => {
+            const [value, label] = entry.split("|");
+            return `<option value="${value}">${esc(label)}</option>`;
+          }).join("")}
         </select>
         <button class="btn btn-primary btn-sm" type="button" data-action="fetch-corporate" ${holdings.length ? "" : "disabled"}>
           ${icon("refresh")} Fetch actions
         </button>
       </div>
+      <p class="card-foot">Windows follow the Indian financial year, 1 April to 31 March.</p>
       ${holdings.length ? "" : `<p class="card-foot">Add a stock or ETF with a symbol first.</p>`}
     </section>`;
 }
@@ -1529,14 +1541,15 @@ async function loadIncomeYear(year) {
 
 async function fetchCorporateActions() {
   if (!isAdmin()) return;
-  const years = Number($("#corp-years")?.value || 1);
+  const [fy, span] = ($("#corp-window")?.value || "").split(":").map(Number);
+  const query = fy && span ? `?fy=${fy}&span=${span}` : "";
   const button = $('[data-action="fetch-corporate"]');
   if (button) {
     button.disabled = true;
     button.innerHTML = `<span class="spinner"></span> Checking NSE…`;
   }
   try {
-    const data = await api(`/corporate-actions?years=${years}`);
+    const data = await api(`/corporate-actions${query}`);
     state.corporate = data.result;
     if (!data.result.items.length) {
       toast(data.result.message || "No new dividend or bonus actions found", "warn");
@@ -1565,7 +1578,7 @@ function openCorporateModal(result) {
       <div class="corp-summary">
         <div><span>Dividend credits</span><strong>${result.dividend_count} · ${inr2(result.dividend_amount)}</strong></div>
         <div><span>Bonus / splits</span><strong>${result.bonus_count}</strong></div>
-        <div><span>Lookback</span><strong>${range.years || 1} year${Number(range.years) === 1 ? "" : "s"}</strong></div>
+        <div><span>Lookback</span><strong>${esc(range.label || "This financial year")}</strong></div>
       </div>
       ${warnings.length ? `<div class="info-strip warn" style="margin-bottom:12px">${icon("alert", "sm")}<span>${warnings.map(esc).join(" · ")}</span></div>` : ""}
       <div class="corp-list-head">

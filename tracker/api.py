@@ -1277,11 +1277,15 @@ def delete_income(income_id: int):
 @admin_required
 def preview_corporate_actions():
     try:
-        years = int(request.args.get("years", "1"))
+        fy = int(request.args.get("fy", "")) or None
     except (TypeError, ValueError):
-        years = 1
+        fy = None
     try:
-        result = corporate.collect(years)
+        span = int(request.args.get("span", "1"))
+    except (TypeError, ValueError):
+        span = 1
+    try:
+        result = corporate.collect(fy, span)
     except Exception as exc:  # noqa: BLE001 - upstream sources are best-effort
         return jsonify(error=f"Could not fetch corporate actions ({exc.__class__.__name__})"), 502
     return jsonify(result=result)

@@ -193,7 +193,8 @@ name and shows the date plus "N holdings across N members."
   items are highlighted in red, items due within a week in amber.
 - **Member bank details** — where each member's dividends, interest and rent should land.
   Account numbers are masked for other members and for viewers.
-- **Dividends & bonus** — admins pick a lookback window and click **Fetch actions**. DeepTrack
+- **Dividends & bonus** — admins pick a financial year (windows run 1 April to 31 March:
+  this FY, the previous FY, or the last 3/5 FYs) and click **Fetch actions**. DeepTrack
   reads NSE corporate actions (Yahoo Finance as fallback) for every stock and ETF holding and
   lists what it found. Tick the actions you want and confirm:
   - **Dividends** become pending income entries (`shares × Rs per share`) in the checklist;
