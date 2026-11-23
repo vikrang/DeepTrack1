@@ -2324,11 +2324,11 @@ function transactionsSectionHtml(item) {
       <button class="btn btn-secondary btn-block btn-sm" type="button" data-action="txn-import" data-id="${item.id}">${icon("upload")} Import broker trade report</button>
       <input type="file" id="txn-file-${item.id}" accept=".xlsx,.xlsm,.csv,.pdf" hidden>
     </div>` : "";
-  const hint = `<p class="txn-hint">Kotak Neo → Reports → Equity → Portfolio Transactions (.xlsx, one scrip per file) or ICICI Direct → Reports → Equity → Transaction Statement (.pdf). Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped.</p>`;
+  const hint = `<p class="txn-hint">Kotak Neo → <strong>Portfolio Tracker</strong> → each holding, downloaded as <strong>Excel</strong> (.xlsx, one holding per file), or ICICI Direct → <strong>Transaction Statement</strong> downloaded as <strong>PDF</strong>. Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped.</p>`;
   if (!rows.length) {
     return `<div class="section-label">Transactions</div>
       <div class="txn-card">
-        <p class="muted small" style="margin:0">Import the scrip's trade report (Kotak .xlsx or ICICI statement .pdf) to see every trade here, with realised (FIFO) and unrealised gains.</p>
+        <p class="muted small" style="margin:0">Import the holding's trade report — Kotak "Portfolio Tracker" Excel or ICICI "Transaction Statement" PDF — to see every trade here, with realised (FIFO) and unrealised gains.</p>
         ${actions}
         ${hint}
       </div>`;

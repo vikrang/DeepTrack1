@@ -164,8 +164,8 @@ def _icici_rows(lines: list) -> dict:
     )
     if header is None:
         raise ValueError(
-            "This PDF doesn't look like an ICICI Securities Equity Transaction Statement. "
-            "In ICICI Direct download Reports → Equity → Transaction Statement (cash market)."
+            "This PDF doesn't look like an ICICI Securities Transaction Statement. "
+            "In ICICI Direct download the Equity Transaction Statement as a PDF (cash market)."
         )
     result = []
     scrips = []
@@ -237,8 +237,8 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
     header_index, labels = _find_header(rows)
     if header_index is None:
         raise ValueError(
-            "This doesn't look like a per-scrip transactions report — no Date / Trade / Quantity columns found. "
-            "In Kotak Neo open the scrip's Portfolio Transactions and download the .xlsx."
+            "This doesn't look like a per-holding Kotak report — no Date / Trade / Quantity columns found. "
+            "In Kotak Neo open Reports → Portfolio Tracker, choose each holding and download it as Excel."
         )
 
     used = set()

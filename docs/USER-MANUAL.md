@@ -432,9 +432,9 @@ Open a **stock**, **ETF** or **mutual fund** holding and its drawer carries a
 
 **Importing the trades.** Admins click **Import broker trade report** and pick either:
 
-- **Kotak Neo** → **Reports → Equity → Portfolio Transactions** — the `.xlsx` for that
-  one scrip.
-- **ICICI Direct** → **Reports → Equity → Transaction Statement** — the
+- **Kotak Neo** → **Reports → Portfolio Tracker → each holding**, downloaded as
+  **Excel** — the `.xlsx` for that one holding.
+- **ICICI Direct** → **Transaction Statement**, downloaded as **PDF** — the
   `TRX-Equity…pdf` cash-market statement. It covers every scrip traded in the period;
   DeepTrack keeps only the rows for the holding you opened and says how many rows for
   other scrips were ignored.
