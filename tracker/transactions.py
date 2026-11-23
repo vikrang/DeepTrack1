@@ -1,11 +1,13 @@
 """Broker transaction reports.
 
-Three layouts are understood:
+Four layouts are understood:
 
 * Kotak Neo "Portfolio Transactions" — one workbook per scrip, with the scrip
   name in a header block and a Date / Trade / Quantity table below.
-* Kotak Neo "Transaction Statement" — one CSV for every scrip traded, with
-  Trade Date / Security Name / Transaction Type / Quantity / Market Rate.
+* Kotak Neo "Transaction Statement" CSV — every scrip traded in the period,
+  with Trade Date / Security Name / Transaction Type / Quantity / Market Rate.
+* Kotak Neo "Transaction Statement" PDF — the same period statement as a
+  fixed-width table; rows fingerprint identically to the CSV.
 * ICICI Securities "Equity Transaction Statement" (the TRX-Equity PDF) — a
   fixed-width table covering every scrip traded in the period.
 
@@ -180,6 +182,106 @@ def _pdf_lines(blob: bytes) -> list:
     return text.splitlines()
 
 
+KOTAK_PDF_ROW_RE = re.compile(
+    r"^(?P<date>\d{2}/\d{2}/\d{4})\s{2,}(?P<security>.+?)\s{2,}"
+    r"(?P<isin>[A-Z]{2}[A-Z0-9]{10})\s{2,}(?P<exchange>NSE|BSE)\s{2,}"
+    r"(?P<side>Buy|Sell|B|S)\s{2,}(?P<product>[A-Za-z][A-Za-z ]*?)\s{2,}"
+    r"(?P<source>.+?)\s{2,}(?P<qty>[\d,]+(?:\.\d+)?)\s{2,}"
+    r"(?P<rate>[\d,]+(?:\.\d+)?)\s{2,}(?P<total>[\d,]+(?:\.\d+)?)\s{2,}"
+    r"(?P<charges>[\d,]+(?:\.\d+)?)\s{2,}(?P<stt>[\d,]+(?:\.\d+)?)\s*$"
+)
+
+KOTAK_PDF_TIME_RE = re.compile(r"^(?P<time>\d{2}:\d{2}:\d{2})(?:\s|$)")
+
+
+def _is_icici_pdf(lines: list) -> bool:
+    return any("Security" in line and "Quantity" in line and "Trade No" in line for line in lines)
+
+
+def _kotak_pdf_rows(lines: list) -> dict:
+    """Fixed-width Kotak periodic statement; wrapped names and times sit on the next line."""
+    rows = []
+    pending = None
+    skipped = 0
+    for line in lines:
+        text = line.strip()
+        match = KOTAK_PDF_ROW_RE.match(text)
+        if match:
+            pending = None
+            quantity = _number(match.group("qty"))
+            price = _number(match.group("rate"))
+            product = _text(match.group("product"))
+            if quantity is None or quantity <= 0 or price is None:
+                skipped += 1
+                continue
+            if any(word in product.lower() for word in SKIP_PRODUCTS):
+                continue
+            pending = {
+                "trade_date": None,
+                "date_text": match.group("date"),
+                "security": " ".join(match.group("security").split()),
+                "isin": match.group("isin"),
+                "kind": "buy" if match.group("side") in ("Buy", "B") else "sell",
+                "quantity": quantity,
+                "price": price,
+                "value": _number(match.group("total")),
+                "product": product,
+                "trade_time": "",
+            }
+            rows.append(pending)
+            continue
+        if pending is not None and KOTAK_PDF_TIME_RE.match(text):
+            parts = re.split(r"\s{2,}", text)
+            clock = _clock(parts[0])
+            if clock and not pending["trade_time"]:
+                pending["trade_time"] = clock
+            extra = " ".join(part for part in parts[1:] if part and part.lower() != "neo").strip()
+            if extra:
+                pending["security"] = f"{pending['security']} {extra}".strip()
+            continue
+        pending = None
+
+    result = []
+    fingerprints = {}
+    securities = set()
+    for item in rows:
+        trade_date = _parse_date(item.pop("date_text"))
+        if trade_date is None:
+            skipped += 1
+            continue
+        quantity = round(item["quantity"], 4)
+        price = round(item["price"], 4)
+        value = item["value"] if item["value"] else quantity * price
+        security = item["security"]
+        securities.add(security)
+        base = "|".join([
+            trade_date.isoformat(), item["kind"], f"{quantity:.4f}",
+            f"{price:.4f}", f"{abs(value):.2f}", "",
+        ])
+        base = f"{security.lower()}|{base}"
+        fingerprints[base] = fingerprints.get(base, 0) + 1
+        result.append({
+            "trade_date": trade_date.isoformat(),
+            "trade_time": item["trade_time"],
+            "kind": item["kind"],
+            "quantity": quantity,
+            "price": price,
+            "value": round(value, 2),
+            "product": item["product"],
+            "trade_type": "",
+            "security": security,
+            "isin": item["isin"],
+            "fingerprint": hashlib.sha1(f"{base}|{fingerprints[base]}".encode()).hexdigest()[:40],
+        })
+    if not result:
+        raise ValueError(
+            "This PDF doesn't look like a Kotak or ICICI trade statement. In Kotak Neo "
+            "download Reports → Transaction Statement as CSV or PDF; in ICICI Direct "
+            "download the Equity Transaction Statement PDF."
+        )
+    return {"scrips": sorted(securities), "rows": result, "skipped": skipped}
+
+
 def _icici_rows(lines: list) -> dict:
     header = next(
         (line for line in lines if "Security" in line and "Quantity" in line and "Trade No" in line),
@@ -210,6 +312,8 @@ def _icici_rows(lines: list) -> dict:
             if fragment and not re.search(r"\d{2}:\d{2}", fragment):
                 security = f"{security} {fragment}".strip()
             following += 1
+        isin_match = ICICI_ISIN_PREFIX_RE.match(security)
+        isin = isin_match.group(0).strip() if isin_match else ""
         security = ICICI_ISIN_PREFIX_RE.sub("", " ".join(security.split())).strip()
         scrips.append(security)
         quantity = _number(match.group("qty"))
@@ -238,6 +342,7 @@ def _icici_rows(lines: list) -> dict:
             "product": match.group("exchange"),
             "trade_type": "Cash",
             "security": security,
+            "isin": isin,
             "fingerprint": hashlib.sha1(f"{base}|{fingerprints[base]}".encode()).hexdigest()[:40],
         })
     if not result:
@@ -251,7 +356,10 @@ def _icici_rows(lines: list) -> dict:
 def parse_transactions(blob: bytes, filename: str) -> dict:
     name = (filename or "").lower()
     if name.endswith(".pdf") or blob[:4] == b"%PDF":
-        return _icici_rows(_pdf_lines(blob))
+        lines = _pdf_lines(blob)
+        if _is_icici_pdf(lines):
+            return _icici_rows(lines)
+        return _kotak_pdf_rows(lines)
     if name.endswith((".xlsx", ".xlsm")):
         rows = _sheet_rows(blob)
     elif name.endswith(".csv"):
@@ -273,6 +381,7 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
         ("date", DATE_KEYS), ("time", TIME_KEYS), ("kind", KIND_KEYS), ("product", PRODUCT_KEYS),
         ("trade_type", TYPE_KEYS), ("quantity", QUANTITY_KEYS),
         ("price", PRICE_KEYS), ("value", VALUE_KEYS), ("security", SCRIP_KEYS),
+        ("isin", ("isin",)),
     ):
         index = _column(labels, keys, used)
         if index is not None:
@@ -331,6 +440,7 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
             "product": product,
             "trade_type": trade_type,
             "security": security,
+            "isin": _text(cell(row, "isin")).upper(),
             "fingerprint": hashlib.sha1(f"{base}|{fingerprints[base]}".encode()).hexdigest()[:40],
         })
 

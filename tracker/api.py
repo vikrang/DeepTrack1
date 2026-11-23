@@ -1040,6 +1040,120 @@ def _trade_holdings() -> list:
     return holdings
 
 
+def _statement_buckets(parsed):
+    """Sort the statement's rows into per-holding buckets, ambiguous scrips and new scrips."""
+    fallback = str(parsed.get("scrip") or "").strip()
+    holdings = _trade_holdings()
+    index = broker.ScripIndex()
+    resolved = {}
+    bucket = {}
+    unmatched = {}
+    ambiguous = {}
+    blank = 0
+    for row in parsed["rows"]:
+        security = (row.get("security") or fallback).strip()
+        if not security:
+            blank += 1
+            continue
+        hits = [
+            (item, symbol) for item, symbol in holdings
+            if _scrip_matches(security, item["name"], symbol)
+        ]
+        if not hits:
+            key = security.lower()
+            if key not in resolved:
+                isin = str(row.get("isin") or "").upper()
+                resolved[key] = index.resolve("", isin, security)[0]
+            by_symbol = [
+                (item, symbol) for item, symbol in holdings
+                if resolved[key] and str(symbol).upper() == resolved[key]
+            ]
+            hits = by_symbol if len(by_symbol) == 1 else []
+        if not hits:
+            unmatched.setdefault(security, []).append(row)
+        elif len(hits) > 1:
+            entry = ambiguous.setdefault(security, {
+                "security": security,
+                "rows": 0,
+                "holdings": [f"{item['name']} — {item['owner_name']}" for item, _ in hits],
+            })
+            entry["rows"] += 1
+        else:
+            item, symbol = hits[0]
+            entry = bucket.setdefault(item["id"], {"item": item, "symbol": symbol, "rows": []})
+            entry["rows"].append(row)
+    return bucket, unmatched, ambiguous, blank
+
+
+def _statement_creations(unmatched) -> list:
+    """Holdings to create for scrips the statement covers but the portfolio doesn't."""
+    if not unmatched:
+        return []
+    index = broker.ScripIndex()
+    groups = {}
+    for security, rows in unmatched.items():
+        isin = next((str(row.get("isin") or "").upper() for row in rows if row.get("isin")), "")
+        symbol, note = index.resolve("", isin, security)
+        group = groups.setdefault(symbol or security.lower(), {
+            "security": security, "symbol": symbol, "note": note or "", "rows": [],
+        })
+        group["rows"].extend(rows)
+        if symbol and not group["symbol"]:
+            group["symbol"], group["note"] = symbol, note or ""
+    plan = []
+    for group in groups.values():
+        rows = sorted(group["rows"], key=lambda row: (row["trade_date"], row.get("trade_time") or ""))
+        fifo = services._fifo_gains(rows)
+        symbol = group["symbol"]
+        scrip = index.by_symbol.get(symbol) if symbol else None
+        quantity = fifo["remaining_qty"]
+        invested = fifo["remaining_cost"]
+        avg_cost = round(invested / quantity, 4) if quantity > 1e-9 else 0.0
+        quote = (
+            db.query_one("SELECT close_price FROM market_prices WHERE symbol = ?", (symbol,))
+            if symbol else None
+        )
+        ltp = float(quote["close_price"]) if quote is not None and quote["close_price"] is not None else None
+        status, reason = "ready", ""
+        if fifo["incomplete"] and quantity <= 1e-9:
+            status = "unbalanced"
+            reason = "sells here exceed buys, so the full position isn't in this statement — widen the dates or add the holding first"
+        elif quantity <= 1e-9:
+            status = "closed"
+            reason = "the statement's sells leave nothing held"
+        elif not symbol:
+            status = "nosymbol"
+            reason = "no NSE symbol matched the name — run Market data → Refresh, then import again"
+        dates = [row["trade_date"] for row in rows]
+        name = scrip["name"] if scrip is not None else group["security"]
+        plan.append({
+            "security": group["security"],
+            "name": name,
+            "type": "etf" if re.search(r"\betf\b|bees", name.lower()) else "stocks",
+            "symbol": symbol,
+            "note": group["note"],
+            "status": status,
+            "reason": reason,
+            "rows": len(rows),
+            "buys": sum(1 for row in rows if row["kind"] == "buy"),
+            "sells": sum(1 for row in rows if row["kind"] == "sell"),
+            "quantity": quantity,
+            "avg_cost": avg_cost,
+            "invested": invested,
+            "ltp": round(ltp, 2) if ltp is not None else None,
+            "current": round(quantity * ltp, 2) if ltp is not None else invested,
+            "first_date": dates[0] if dates else "",
+            "last_date": dates[-1] if dates else "",
+            "trade_rows": rows,
+        })
+    plan.sort(key=lambda item: item["name"].lower())
+    return plan
+
+
+def _public_creation(item: dict) -> dict:
+    return {key: value for key, value in item.items() if key != "trade_rows"}
+
+
 @bp.post("/investments/<int:item_id>/transactions/import")
 @admin_required
 def import_transactions(item_id: int):
@@ -1151,45 +1265,9 @@ def import_statement_transactions():
     except ValueError as exc:
         return jsonify(error=str(exc)), 422
 
-    fallback = str(parsed.get("scrip") or "").strip()
-    holdings = _trade_holdings()
-    bucket = {}
-    unmatched = {}
-    ambiguous = {}
-    blank = 0
-    for row in parsed["rows"]:
-        security = (row.get("security") or fallback).strip()
-        if not security:
-            blank += 1
-            continue
-        hits = [
-            (item, symbol) for item, symbol in holdings
-            if _scrip_matches(security, item["name"], symbol)
-        ]
-        if not hits:
-            unmatched[security] = unmatched.get(security, 0) + 1
-        elif len(hits) > 1:
-            entry = ambiguous.setdefault(security, {
-                "security": security,
-                "rows": 0,
-                "holdings": [f"{item['name']} — {item['owner_name']}" for item, _ in hits],
-            })
-            entry["rows"] += 1
-        else:
-            item, symbol = hits[0]
-            entry = bucket.setdefault(item["id"], {"item": item, "symbol": symbol, "rows": []})
-            entry["rows"].append(row)
-
-    if not bucket:
-        found = sorted(unmatched)
-        listed = ", ".join(found[:3])
-        if len(found) > 3:
-            listed += f" and {len(found) - 3} more"
-        detail = f" ({listed})" if listed else ""
-        return jsonify(error=(
-            "None of the scrips in this statement match a stock, ETF or equity fund "
-            f"in the portfolio{detail}. Add the holdings first, then import again."
-        )), 422
+    bucket, unmatched, ambiguous, blank = _statement_buckets(parsed)
+    creations = _statement_creations(unmatched)
+    ready = [item for item in creations if item["status"] == "ready"]
 
     existing = {}
     for row in db.query("SELECT investment_id, fingerprint FROM transactions"):
@@ -1220,24 +1298,74 @@ def import_statement_transactions():
             "last_date": dates[-1] if dates else "",
         })
     summaries.sort(key=lambda s: s["name"].lower())
+    total_new += sum(item["rows"] for item in ready)
 
     commit = str(request.form.get("commit") or "") in ("1", "true", "yes")
+    create_missing = str(request.form.get("create_missing") or "") in ("1", "true", "yes")
     if commit:
+        try:
+            owner_id = int(request.form.get("create_owner"))
+        except (TypeError, ValueError):
+            owner_id = None
+        if create_missing and ready and not _owner_exists(owner_id):
+            return jsonify(error="Choose the member the new holdings belong to"), 422
         source = "icici" if (upload.filename or "").lower().endswith(".pdf") else "kotak"
         now = db.now()
         conn = db.get_db()
         imported = 0
+        created = []
         for entry in bucket.values():
             for row in entry["fresh"]:
                 imported += _insert_transaction(conn, entry["item"]["id"], row, source, actor["id"], now)
+        for item in ready if create_missing else []:
+            payload = {
+                "type": item["type"],
+                "name": item["name"],
+                "symbol": item["symbol"],
+                "exchange": "NSE",
+                "invested_amount": item["invested"],
+                "current_value": item["current"],
+                "start_date": item["first_date"],
+                "notes": f"Created from {upload.filename}",
+                "owner_id": owner_id,
+            }
+            if item["type"] == "etf":
+                payload.update(units=item["quantity"], avg_price=item["avg_cost"],
+                               current_price=item["ltp"])
+            else:
+                payload.update(quantity=item["quantity"], avg_buy_price=item["avg_cost"],
+                               ltp=item["ltp"])
+            data, errors = fields.validate_investment(payload)
+            if errors:
+                continue
+            new_id = conn.execute(
+                """INSERT INTO investments (public_id, owner_id, category, type, name, invested_amount,
+                                            current_value, start_date, notes, details, created_by,
+                                            created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    db.new_public_id(), data["owner_id"], data["category"], data["type"], data["name"],
+                    data["invested_amount"], data["current_value"], data["start_date"], data["notes"],
+                    json.dumps(data["details"], ensure_ascii=False), actor["id"], now, now,
+                ),
+            ).lastrowid
+            for row in item["trade_rows"]:
+                imported += _insert_transaction(conn, new_id, row, source, actor["id"], now)
+            db.log_activity(
+                actor["id"], "created",
+                f"Added {data['name']} from a trade statement", "investment", new_id,
+            )
+            created.append({"id": new_id, "name": data["name"], "symbol": item["symbol"]})
         conn.commit()
         if imported:
-            db.log_activity(
-                actor["id"], "imported",
-                f"Imported {imported} transaction(s) across {len(bucket)} holding(s) "
-                f"from {upload.filename}", "investment", None,
-            )
-        return jsonify(imported=imported, duplicates=total_dupes, holdings=summaries)
+            holdings_touched = len(bucket) + len(created)
+            message = f"Imported {imported} transaction(s) across {holdings_touched} holding(s) from {upload.filename}"
+            if created:
+                message += f", creating {len(created)} new holding(s)"
+            db.log_activity(actor["id"], "imported", message, "investment", None)
+        return jsonify(
+            imported=imported, duplicates=total_dupes, created=created, holdings=summaries,
+        )
 
     return jsonify(
         file=upload.filename,
@@ -1247,7 +1375,7 @@ def import_statement_transactions():
         new=total_new,
         duplicates=total_dupes,
         holdings=summaries,
-        unmatched=[{"security": name, "rows": count} for name, count in sorted(unmatched.items())],
+        create=[_public_creation(item) for item in creations],
         ambiguous=sorted(ambiguous.values(), key=lambda a: a["security"].lower()),
     )
 

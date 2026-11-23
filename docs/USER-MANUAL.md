@@ -434,15 +434,24 @@ Open a **stock**, **ETF** or **mutual fund** holding and its drawer carries a
 
 - **One statement for the whole portfolio** — go to **Import & export → Import a
   broker trade statement** and drop the ICICI **Transaction Statement PDF** or the
-  Kotak **Transaction Statement CSV**. Every trade is filed against the holding whose
-  scrip matches; rows for scrips you don't hold are listed and skipped, and a scrip
-  held by more than one member is skipped so it can be imported from that holding's
-  drawer instead. The preview names each holding with its trade count before anything
-  is written.
+  Kotak **Transaction Statement PDF or CSV**. Every trade is filed against the holding whose
+  scrip matches, and scrips you don't hold yet are created as new holdings from the
+  statement's own trades — the preview shows each new holding's symbol, quantity and
+  average cost, and you choose the member it belongs to. Matching falls back to the
+  statement's ISIN and the NSE scrip list, so a different spelling still lands on the
+  right holding. A scrip held by more than one member is skipped so it can be imported
+  from that holding's drawer instead. Scrips whose sells leave nothing held, whose
+  sells outweigh the buys in the statement, or whose symbol can't be matched are listed
+  with the reason and not imported. The preview names each holding with its trade count
+  before anything is written. A new holding's quantity and average cost come from this
+  statement only, so a statement that starts mid-year can understate what is held —
+  widen the dates or correct the quantity afterwards.
 - **One holding at a time** — open the holding, click **Import broker trade report**
   and pick any of:
-  - **Kotak Neo** → **Reports → Transaction Statement**, downloaded as **CSV** — one
-    file covering every scrip traded in the period; only the open holding's rows are kept.
+  - **Kotak Neo** → **Reports → Transaction Statement**, downloaded as **CSV** or
+    **PDF** — one period file covering every scrip traded; only the open holding's rows
+    are kept, and the two formats fingerprint the same trades, so importing both files
+    for the same period adds nothing twice.
   - **Kotak Neo** → **Reports → Portfolio Tracker → each holding**, downloaded as
     **Excel** — the `.xlsx` for that one holding.
   - **ICICI Direct** → **Transaction Statement**, downloaded as **PDF** — the

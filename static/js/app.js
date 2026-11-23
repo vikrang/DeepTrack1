@@ -2324,11 +2324,11 @@ function transactionsSectionHtml(item) {
       <button class="btn btn-secondary btn-block btn-sm" type="button" data-action="txn-import" data-id="${item.id}">${icon("upload")} Import broker trade report</button>
       <input type="file" id="txn-file-${item.id}" accept=".xlsx,.xlsm,.csv,.pdf" hidden>
     </div>` : "";
-  const hint = `<p class="txn-hint">Kotak Neo → <strong>Transaction Statement</strong> as <strong>CSV</strong> (covers every scrip at once) or <strong>Portfolio Tracker</strong> per holding as <strong>Excel</strong>, or ICICI Direct → <strong>Transaction Statement</strong> as <strong>PDF</strong>. Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped. To file a whole statement in one go, use Import &amp; export → <strong>Import a broker trade statement</strong>.</p>`;
+  const hint = `<p class="txn-hint">Kotak Neo → <strong>Transaction Statement</strong> as <strong>CSV</strong> or <strong>PDF</strong> (covers every scrip at once) or <strong>Portfolio Tracker</strong> per holding as <strong>Excel</strong>, or ICICI Direct → <strong>Transaction Statement</strong> as <strong>PDF</strong>. Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped, even if they came in from the other format. To file a whole statement in one go, use Import &amp; export → <strong>Import a broker trade statement</strong>.</p>`;
   if (!rows.length) {
     return `<div class="section-label">Transactions</div>
       <div class="txn-card">
-        <p class="muted small" style="margin:0">Import a broker trade report — Kotak "Transaction Statement" CSV or "Portfolio Tracker" Excel, or ICICI "Transaction Statement" PDF — to see every trade here, with realised (FIFO) and unrealised gains.</p>
+        <p class="muted small" style="margin:0">Import a broker trade report — Kotak "Transaction Statement" CSV or PDF, "Portfolio Tracker" Excel, or ICICI "Transaction Statement" PDF — to see every trade here, with realised (FIFO) and unrealised gains.</p>
         ${actions}
         ${hint}
       </div>`;
@@ -4532,7 +4532,7 @@ function renderImport() {
       <div class="card-head">
         <div>
           <div class="card-title">Import a broker trade statement</div>
-          <div class="card-sub">One period, every scrip — each trade is filed against the holding it belongs to</div>
+          <div class="card-sub">One period, every scrip — trades are filed against your holdings, and scrips you don't hold yet are created</div>
         </div>
         <span class="pill pill-muted">ICICI · Kotak</span>
       </div>
@@ -4540,10 +4540,10 @@ function renderImport() {
         <div class="dz-icon">${icon("upload")}</div>
         <h4>Drop a trade statement here</h4>
         <p>or click to browse files</p>
-        <span class="file-hint">ICICI Transaction Statement (.pdf) or Kotak Transaction Statement (.csv)</span>
+        <span class="file-hint">ICICI or Kotak Transaction Statement (.pdf), or Kotak Transaction Statement (.csv)</span>
       </div>
       <input type="file" id="statement-file" accept=".pdf,.csv,.xlsx,.xlsm" class="hidden">
-      <p class="muted small" style="margin:10px 0 0">Trades are matched to stocks, ETFs and equity funds by scrip name. Rows for scrips you don't hold yet are listed and skipped; duplicates are ignored.</p>
+      <p class="muted small" style="margin:10px 0 0">Trades are matched to stocks, ETFs and equity funds by scrip name or ISIN. Scrips you don't hold yet are offered as new holdings in the preview — pick whose they are, and their quantity and average cost come from this statement's trades. Duplicates are ignored.</p>
     </section>
 
     <section class="card card-pad" style="margin-bottom:18px">
@@ -4656,6 +4656,9 @@ async function uploadStatement(file) {
 
 function openStatementPreview(file, data) {
   const holdings = data.holdings || [];
+  const creations = data.create || [];
+  const ready = creations.filter((c) => c.status === "ready");
+  const skippedCreations = creations.filter((c) => c.status !== "ready");
   const total = data.new || 0;
   const holdingRows = holdings.map((h) => `
     <div class="txn-preview-row">
@@ -4664,11 +4667,23 @@ function openStatementPreview(file, data) {
       <span class="txn-qty">${h.rows} trade${h.rows === 1 ? "" : "s"}</span>
       <strong class="txn-value">${h.new ? `${h.new} new` : "all imported"}</strong>
     </div>`).join("");
-  const unmatched = data.unmatched || [];
+  const creationRows = ready.map((c) => `
+    <div class="txn-preview-row">
+      <strong style="flex:1;min-width:0">${esc(c.name)}</strong>
+      <span class="muted small mono">${esc(c.symbol)}${c.type === "etf" ? " · ETF" : ""}</span>
+      <span class="txn-qty">${nf(4).format(Number(c.quantity) || 0)} × ${inr2(c.avg_cost)}</span>
+      <strong class="txn-value">${c.rows} trade${c.rows === 1 ? "" : "s"}</strong>
+    </div>`).join("");
   const ambiguous = data.ambiguous || [];
-  const unmatchedLabel = unmatched.length > 6
-    ? `${unmatched.slice(0, 6).map((u) => `${u.security} (${u.rows})`).join(", ")} +${unmatched.length - 6} more`
-    : unmatched.map((u) => `${u.security} (${u.rows})`).join(", ");
+  const me = state.members.find((m) => m.is_self) || state.members[0];
+  const ownerSelect = ready.length ? `
+    <label class="field" style="margin-top:14px;max-width:340px">
+      <span>Create the new holdings under</span>
+      <select id="statement-create-owner">
+        ${state.members.map((m) => `<option value="${m.id}" ${me && m.id === me.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
+      </select>
+      <span class="help">Quantity and average cost are worked out from this statement's trades, so a statement that starts mid-year can understate what is held.</span>
+    </label>` : "";
   const body = `
     <div class="txn-import-facts">
       <div><span>Trades in statement</span><strong>${data.rows}</strong></div>
@@ -4677,13 +4692,20 @@ function openStatementPreview(file, data) {
       <div><span>Already imported</span><strong>${data.duplicates}</strong></div>
     </div>
     ${holdingRows ? `<div class="txn-preview-list">${holdingRows}</div>` : ""}
-    ${unmatched.length ? `<p class="muted small">No holding matches ${esc(unmatchedLabel)} — those rows are skipped. Add those holdings first, then import the statement again.</p>` : ""}
+    ${creationRows ? `
+      <div class="section-label" style="margin-top:16px">New holdings · ${ready.length}</div>
+      <div class="txn-preview-list">${creationRows}</div>
+      ${ownerSelect}` : ""}
+    ${skippedCreations.length ? `<p class="muted small">${esc(skippedCreations.map((c) => `${c.name} — ${c.reason}`).join("; "))} — those scrips are not imported.</p>` : ""}
     ${ambiguous.length ? `<p class="muted small">${esc(ambiguous.map((a) => `${a.security} (${a.holdings.join(" / ")})`).join("; "))} — held by more than one member, so those rows are skipped. Import that scrip from the holding's own drawer instead.</p>` : ""}
     ${data.blank ? `<p class="muted small">${data.blank} row${data.blank === 1 ? "" : "s"} skipped — no scrip name in the statement.</p>` : ""}
     ${data.skipped ? `<p class="muted small">${data.skipped} row${data.skipped === 1 ? "" : "s"} skipped — intraday, F&amp;O or missing data.</p>` : ""}
-    ${!total ? `<p class="muted small">Every matched trade in this statement is already imported.</p>` : ""}
+    ${!total ? `<p class="muted small">Every trade in this statement is already imported, or nothing can be imported from it.</p>` : ""}
   `;
-  const label = `Import ${total} trade${total === 1 ? "" : "s"}`;
+  const bits = [];
+  if (total) bits.push(`Import ${total} trade${total === 1 ? "" : "s"}`);
+  if (ready.length) bits.push(`create ${ready.length} holding${ready.length === 1 ? "" : "s"}`);
+  const label = bits.length ? bits.join(" · ") : "Nothing new to import";
   openModal({
     title: "Import a trade statement",
     subtitle: esc(file.name),
@@ -4699,11 +4721,19 @@ function openStatementPreview(file, data) {
         const form = new FormData();
         form.append("file", file);
         form.append("commit", "1");
+        if (ready.length) {
+          form.append("create_missing", "1");
+          form.append("create_owner", backdrop.querySelector("#statement-create-owner")?.value || "");
+        }
         try {
           const result = await api("/transactions/import", { method: "POST", form });
           close();
-          const across = (result.holdings || []).length;
-          toast(`${result.imported} trade${result.imported === 1 ? "" : "s"} imported across ${across} holding${across === 1 ? "" : "s"}`, "ok");
+          const across = (result.holdings || []).length + (result.created || []).length;
+          const fresh = (result.created || []).length;
+          toast(
+            `${result.imported} trade${result.imported === 1 ? "" : "s"} imported across ${across} holding${across === 1 ? "" : "s"}${fresh ? ` · ${fresh} new holding${fresh === 1 ? "" : "s"} created` : ""}`,
+            "ok"
+          );
           await refreshData();
         } catch (error) {
           toast(error.message, "error");

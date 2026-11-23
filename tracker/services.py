@@ -75,7 +75,6 @@ def _fifo_gains(rows: list) -> dict:
             lots.append([qty, unit])
             gains.append(None)
             continue
-        proceeds = float(row["value"] or 0) or qty * unit
         left = qty
         cost = 0.0
         while left > 1e-9 and lots:
@@ -86,9 +85,10 @@ def _fifo_gains(rows: list) -> dict:
             left -= take
             if lot[0] <= 1e-9:
                 lots.pop(0)
+        matched = qty - left
         if left > 1e-9:
             incomplete = True
-        gain = proceeds - cost
+        gain = matched * unit - cost if matched > 0 else 0.0
         realized += gain
         gains.append(round(gain, 2))
     return {
