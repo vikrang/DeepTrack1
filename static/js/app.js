@@ -2321,14 +2321,14 @@ function transactionsSectionHtml(item) {
   const tone = (value) => value == null ? "inherit" : value >= 0 ? "var(--ok)" : "var(--bad)";
   const actions = admin ? `
     <div class="txn-actions">
-      <button class="btn btn-secondary btn-block btn-sm" type="button" data-action="txn-import" data-id="${item.id}">${icon("upload")} Import Kotak per-scrip report</button>
-      <input type="file" id="txn-file-${item.id}" accept=".xlsx,.xlsm,.csv" hidden>
+      <button class="btn btn-secondary btn-block btn-sm" type="button" data-action="txn-import" data-id="${item.id}">${icon("upload")} Import broker trade report</button>
+      <input type="file" id="txn-file-${item.id}" accept=".xlsx,.xlsm,.csv,.pdf" hidden>
     </div>` : "";
-  const hint = `<p class="txn-hint">Kotak Neo → Reports → Equity → Portfolio Transactions, one scrip per file, with a date range that covers every trade. Re-importing the same file is safe — duplicate rows are skipped.</p>`;
+  const hint = `<p class="txn-hint">Kotak Neo → Reports → Equity → Portfolio Transactions (.xlsx, one scrip per file) or ICICI Direct → Reports → Equity → Transaction Statement (.pdf). Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped.</p>`;
   if (!rows.length) {
     return `<div class="section-label">Transactions</div>
       <div class="txn-card">
-        <p class="muted small" style="margin:0">Import the scrip's transaction report to see every trade here, with realised (FIFO) and unrealised gains.</p>
+        <p class="muted small" style="margin:0">Import the scrip's trade report (Kotak .xlsx or ICICI statement .pdf) to see every trade here, with realised (FIFO) and unrealised gains.</p>
         ${actions}
         ${hint}
       </div>`;
@@ -4680,8 +4680,8 @@ function pickTransactionFile(id) {
 }
 
 async function previewTransactionImport(id, file) {
-  if (!/\.(xlsx|xlsm|csv)$/i.test(file.name)) {
-    toast("Choose the scrip's .xlsx or .csv report", "error");
+  if (!/\.(xlsx|xlsm|csv|pdf)$/i.test(file.name)) {
+    toast("Choose the broker's .xlsx, .csv or .pdf report", "error");
     return;
   }
   const form = new FormData();
@@ -4704,14 +4704,21 @@ function openTransactionPreview(id, file, data) {
       <span class="txn-qty">${nf(4).format(row.quantity)} × ${inr2(row.price)}</span>
       <strong class="txn-value">${inr2(row.value)}</strong>
     </div>`).join("");
+  const scrips = data.matched_scrips?.length
+    ? data.matched_scrips
+    : data.scrips?.length ? data.scrips : (data.scrip ? [data.scrip] : []);
+  const scripLabel = scrips.length > 2
+    ? `${scrips.slice(0, 2).join(", ")} +${scrips.length - 2} more`
+    : scrips.join(", ");
   const body = `
     <div class="txn-import-facts">
-      <div><span>Scrip in report</span><strong>${esc(data.scrip || "—")}</strong></div>
-      <div><span>Trades found</span><strong>${data.rows}</strong></div>
+      <div><span>Scrip in report</span><strong>${esc(scripLabel || "—")}</strong></div>
+      <div><span>Trades for this holding</span><strong>${data.rows}</strong></div>
       <div><span>New</span><strong>${total}</strong></div>
       <div><span>Already imported</span><strong>${data.duplicates}</strong></div>
     </div>
     ${data.warning ? `<div class="form-error">${esc(data.warning)}</div>` : ""}
+    ${data.other_rows ? `<p class="muted small">${data.other_rows} row${data.other_rows === 1 ? "" : "s"} for other scrips in this statement ${data.other_rows === 1 ? "is" : "are"} ignored.</p>` : ""}
     ${data.skipped ? `<p class="muted small">${data.skipped} row${data.skipped === 1 ? "" : "s"} skipped — intraday, F&amp;O or missing data.</p>` : ""}
     ${data.rows ? `<p class="muted small">${data.buys} buy · ${data.sells} sell · ${fmtDate(data.first_date)} to ${fmtDate(data.last_date)}</p>` : `<p class="muted small">No transactions were found in this file.</p>`}
     ${rows ? `<div class="txn-preview-list">${rows}</div>` : ""}

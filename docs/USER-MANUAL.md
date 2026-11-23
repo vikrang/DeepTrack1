@@ -430,13 +430,20 @@ earns from the next month, as in a passbook. Leave the amounts blank; type your 
 Open a **stock**, **ETF** or **mutual fund** holding and its drawer carries a
 **Transactions** section below the holding details.
 
-**Importing the trades.** Admins click **Import Kotak per-scrip report** and pick the
-file downloaded from Kotak Neo → **Reports → Equity → Portfolio Transactions** for that
-one scrip. Choose a date range that covers every trade from the first buy. DeepTrack
-shows a preview — trades found, how many are new, how many were already imported — and
-only writes them after you confirm. Anything with intraday or F&O product types is
-skipped. The file names its scrip, so if you attach the wrong scrip's file a warning
-appears and nothing is imported.
+**Importing the trades.** Admins click **Import broker trade report** and pick either:
+
+- **Kotak Neo** → **Reports → Equity → Portfolio Transactions** — the `.xlsx` for that
+  one scrip.
+- **ICICI Direct** → **Reports → Equity → Transaction Statement** — the
+  `TRX-Equity…pdf` cash-market statement. It covers every scrip traded in the period;
+  DeepTrack keeps only the rows for the holding you opened and says how many rows for
+  other scrips were ignored.
+
+Choose a date range that covers every trade from the first buy. DeepTrack shows a
+preview — trades found, how many are new, how many were already imported — and only
+writes them after you confirm. Anything with intraday or F&O product types is skipped.
+The report names its scrip, so if nothing in it matches the holding a warning appears
+and nothing is imported.
 
 **What you see.** Each row shows the date, a **BUY**/**SELL** chip, quantity × price,
 trade value, and — on sells — the realised gain for that sell. The top of the drawer

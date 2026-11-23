@@ -978,18 +978,34 @@ def get_investment(item_id: int):
     return jsonify(investment=services.investment_payload(rows[0]))
 
 
+NAME_SUFFIXES = {"ltd", "limited", "lt", "l", "co", "company", "corp", "corporation", "inc", "plc"}
+
+
 def _scrip_matches(report_name: str, item_name: str, symbol: str) -> bool:
     def norm(value):
         text = re.sub(r"[^a-z0-9 ]", " ", str(value or "").lower())
-        return " ".join(text.replace(" limited", " ltd").split())
+        return " ".join(text.split())
+
+    def base_name(value):
+        words = norm(value).split()
+        while words and words[-1] in NAME_SUFFIXES:
+            words.pop()
+        return " ".join(words)
+
     report = norm(report_name)
     item = norm(item_name)
     if not report or not item:
         return True
-    if report == item or report in item or item in report:
+    if report == item:
+        return True
+    if min(len(report), len(item)) >= 4 and (report in item or item in report):
         return True
     ticker = norm(symbol)
-    return bool(ticker and ticker in report.split())
+    if ticker and ticker in report.split():
+        return True
+    # ICICI truncates security names to 20 characters ("TATA CONSULTANCY SERV LT")
+    short, long = sorted((base_name(report), base_name(item)), key=len)
+    return len(short) >= 8 and long.startswith(short)
 
 
 @bp.post("/investments/<int:item_id>/transactions/import")
@@ -1019,38 +1035,47 @@ def import_transactions(item_id: int):
         details = json.loads(item["details"] or "{}")
     except (TypeError, ValueError):
         pass
-    matches = _scrip_matches(parsed["scrip"], item["name"], details.get("symbol", ""))
+    symbol = details.get("symbol", "")
+    scrips = parsed.get("scrips") or ([parsed["scrip"]] if parsed.get("scrip") else [])
+    rows = [row for row in parsed["rows"] if _scrip_matches(row.get("security", ""), item["name"], symbol)]
+    matches = bool(rows)
     warning = ""
-    if parsed["scrip"] and not matches:
+    if parsed["rows"] and not matches:
+        found = ", ".join(scrips[:3]) or "another scrip"
+        if len(scrips) > 3:
+            found += f" and {len(scrips) - 3} more"
         warning = (
-            f"This report is for {parsed['scrip']}, but the holding is {item['name']}. "
-            "Check you picked the right scrip's file."
+            f"This report covers {found}, but the holding is {item['name']}. "
+            "Check you picked the right holding's statement."
         )
 
     existing = {
         row["fingerprint"]
         for row in db.query("SELECT fingerprint FROM transactions WHERE investment_id = ?", (item_id,))
     }
-    fresh = [row for row in parsed["rows"] if row["fingerprint"] not in existing]
+    fresh = [row for row in rows if row["fingerprint"] not in existing]
     commit = str(request.form.get("commit") or "") in ("1", "true", "yes")
-    buys = sum(1 for row in parsed["rows"] if row["kind"] == "buy")
-    dates = sorted(row["trade_date"] for row in parsed["rows"])
+    buys = sum(1 for row in rows if row["kind"] == "buy")
+    dates = sorted(row["trade_date"] for row in rows)
 
     if not commit:
         return jsonify(
-            scrip=parsed["scrip"],
+            scrip=parsed.get("scrip") or (scrips[0] if len(scrips) == 1 else ""),
+            scrips=scrips,
+            matched_scrips=sorted({row.get("security") or parsed.get("scrip", "") for row in rows}),
             matches=matches,
             warning=warning,
-            rows=len(parsed["rows"]),
+            rows=len(rows),
             new=len(fresh),
-            duplicates=len(parsed["rows"]) - len(fresh),
+            duplicates=len(rows) - len(fresh),
+            other_rows=len(parsed["rows"]) - len(rows),
             skipped=parsed["skipped"],
             buys=buys,
-            sells=len(parsed["rows"]) - buys,
-            first_date=dates[0],
-            last_date=dates[-1],
+            sells=len(rows) - buys,
+            first_date=dates[0] if dates else "",
+            last_date=dates[-1] if dates else "",
             preview=[
-                {key: row[key] for key in ("trade_date", "kind", "quantity", "price", "value", "trade_type")}
+                {key: row[key] for key in ("trade_date", "kind", "quantity", "price", "value", "trade_type", "security")}
                 for row in fresh[:8]
             ],
         )
@@ -1058,6 +1083,7 @@ def import_transactions(item_id: int):
     if warning and not matches:
         return jsonify(error=warning), 422
 
+    source = "icici" if (upload.filename or "").lower().endswith(".pdf") else "kotak"
     now = db.now()
     conn = db.get_db()
     imported = 0
@@ -1069,7 +1095,7 @@ def import_transactions(item_id: int):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 item_id, row["trade_date"], row["kind"], row["quantity"], row["price"], row["value"],
-                row["product"], row["trade_type"], "kotak", row["fingerprint"], actor["id"], now,
+                row["product"], row["trade_type"], source, row["fingerprint"], actor["id"], now,
             ),
         )
         imported += cursor.rowcount
@@ -1082,7 +1108,7 @@ def import_transactions(item_id: int):
     updated = db.query_one("SELECT * FROM investments WHERE id = ?", (item_id,))
     return jsonify(
         imported=imported,
-        duplicates=len(parsed["rows"]) - len(fresh),
+        duplicates=len(rows) - len(fresh),
         investment=services.investment_payload(updated),
     )
 

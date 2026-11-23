@@ -1,12 +1,18 @@
-"""Per-scrip broker transaction reports.
+"""Broker transaction reports.
 
-Kotak Neo exports one workbook per scrip ("Portfolio Transactions"), with the
-scrip name in a header block and a table of Date / Trade / Quantity rows below.
-This module turns that export into normalised buy/sell rows.
+Two layouts are understood:
+
+* Kotak Neo "Portfolio Transactions" — one workbook per scrip, with the scrip
+  name in a header block and a Date / Trade / Quantity table below.
+* ICICI Securities "Equity Transaction Statement" (the TRX-Equity PDF) — a
+  fixed-width table covering every scrip traded in the period.
+
+Both are normalised into buy/sell rows with a stable fingerprint.
 """
 
 import csv
 import hashlib
+import re
 from datetime import date, datetime
 from io import BytesIO, StringIO
 
@@ -126,14 +132,107 @@ def _column(labels: list, keys, used: set):
     return None
 
 
+ICICI_ROW_RE = re.compile(
+    r"^(?P<contract>\S+)\s+(?P<settle_no>\d+)\s+(?P<exchange>BSE|NSE)\s+"
+    r"(?P<order_no>\d+)\s+(?P<order_date>\d{2}-\d{2}-\d{4})\s+"
+    r"(?P<trade_no>\d+)\s+(?P<trade_date>\d{2}-\d{2}-\d{4})\s+"
+    r"(?P<settle_date>\d{2}-\d{2}-\d{4})\s+"
+    r"(?P<security>.+?)\s+(?P<side>BUY|SELL|B|S)\s+"
+    r"(?P<qty>[\d,]+(?:\.\d+)?)\s+(?P<rate>[\d,]+\.\d{2})\s+"
+    r"(?P<total>[\d,]+\.\d{2})\s+(?P<brok>[\d,]+\.\d{2})\s+"
+    r"(?P<serv>[\d,]+\.\d{2})\s+(?P<net>[\d,]+\.\d{2})\s*$"
+)
+
+
+def _pdf_lines(blob: bytes) -> list:
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:  # pragma: no cover - dependency is in requirements
+        raise ValueError("PDF support is missing; upload the statement's Excel or CSV export instead.") from exc
+    try:
+        reader = PdfReader(BytesIO(blob))
+        text = "\n".join(page.extract_text(extraction_mode="layout") or "" for page in reader.pages)
+    except Exception as exc:
+        raise ValueError("That PDF could not be read. Download the statement again and retry.") from exc
+    return text.splitlines()
+
+
+def _icici_rows(lines: list) -> dict:
+    header = next(
+        (line for line in lines if "Security" in line and "Quantity" in line and "Trade No" in line),
+        None,
+    )
+    if header is None:
+        raise ValueError(
+            "This PDF doesn't look like an ICICI Securities Equity Transaction Statement. "
+            "In ICICI Direct download Reports → Equity → Transaction Statement (cash market)."
+        )
+    result = []
+    scrips = []
+    skipped = 0
+    fingerprints = {}
+    for index, line in enumerate(lines):
+        match = ICICI_ROW_RE.match(line.strip())
+        if not match:
+            if "ISEC/" in line and re.search(r"\s[BS]\s", line):
+                skipped += 1
+            continue
+        security = match.group("security").strip()
+        following = index + 1
+        while following < len(lines):
+            extra = lines[following]
+            if not extra.strip() or ICICI_ROW_RE.match(extra.strip()) or "ISEC/" in extra:
+                break
+            fragment = extra[match.start("security"):match.start("side")].strip()
+            if fragment and not re.search(r"\d{2}:\d{2}", fragment):
+                security = f"{security} {fragment}".strip()
+            following += 1
+        scrips.append(security)
+        quantity = _number(match.group("qty"))
+        price = _number(match.group("rate"))
+        value = _number(match.group("total"))
+        if quantity is None or quantity <= 0 or price is None:
+            skipped += 1
+            continue
+        kind = "buy" if match.group("side") in ("B", "BUY") else "sell"
+        trade_date = _parse_date(match.group("trade_date"))
+        if trade_date is None:
+            skipped += 1
+            continue
+        base = "|".join([
+            security.lower(), trade_date.isoformat(), kind, f"{quantity:.4f}",
+            f"{price:.4f}", f"{abs(value or quantity * price):.2f}", match.group("exchange").lower(),
+        ])
+        fingerprints[base] = fingerprints.get(base, 0) + 1
+        result.append({
+            "trade_date": trade_date.isoformat(),
+            "kind": kind,
+            "quantity": round(quantity, 4),
+            "price": round(price, 4),
+            "value": round(value if value else quantity * price, 2),
+            "product": match.group("exchange"),
+            "trade_type": "Cash",
+            "security": security,
+            "fingerprint": hashlib.sha1(f"{base}|{fingerprints[base]}".encode()).hexdigest()[:40],
+        })
+    if not result:
+        raise ValueError(
+            "No buy or sell rows were found in this statement. "
+            "Use the ICICI Equity Transaction Statement for the period that contains the trades."
+        )
+    return {"scrips": sorted(set(scrips)), "rows": result, "skipped": skipped}
+
+
 def parse_transactions(blob: bytes, filename: str) -> dict:
     name = (filename or "").lower()
+    if name.endswith(".pdf") or blob[:4] == b"%PDF":
+        return _icici_rows(_pdf_lines(blob))
     if name.endswith((".xlsx", ".xlsm")):
         rows = _sheet_rows(blob)
     elif name.endswith(".csv"):
         rows = _csv_rows(blob)
     else:
-        raise ValueError("Upload the broker's .xlsx or .csv transactions report")
+        raise ValueError("Upload the broker's .xlsx, .csv or .pdf transactions report")
 
     header_index, labels = _find_header(rows)
     if header_index is None:
@@ -161,6 +260,7 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
         index = columns.get(key)
         return row[index] if index is not None and index < len(row) else None
 
+    scrip = _find_scrip(rows)
     result = []
     skipped = 0
     fingerprints = {}
@@ -196,10 +296,16 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
             "value": round(value, 2),
             "product": product,
             "trade_type": trade_type,
+            "security": scrip,
             "fingerprint": hashlib.sha1(f"{base}|{fingerprints[base]}".encode()).hexdigest()[:40],
         })
 
     if not result:
         raise ValueError("No buy or sell rows were found in this report.")
 
-    return {"scrip": _find_scrip(rows), "rows": result, "skipped": skipped}
+    return {
+        "scrip": scrip,
+        "scrips": [scrip] if scrip else [],
+        "rows": result,
+        "skipped": skipped,
+    }
