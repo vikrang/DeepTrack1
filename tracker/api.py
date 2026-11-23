@@ -1,5 +1,6 @@
 """JSON API for DeepTrack."""
 
+import hashlib
 import json
 import re
 import secrets
@@ -14,9 +15,10 @@ import requests
 from flask import Blueprint, g, jsonify, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import broker, config, db, excelio, fields, firebase, market, seed, services
+from . import broker, config, corporate, db, excelio, fields, firebase, market, seed, services
 from .validators import (
     parse_date,
+    parse_number,
     validate_account_number,
     validate_aadhaar,
     validate_email,
@@ -38,8 +40,10 @@ def _existing_identity():
     """Everything already saved: per-member identities plus serials held by another member."""
     keys = set()
     serial = {}
+    by_key = {}
+    by_id = {}
     names = {row["id"]: row["name"] for row in db.query("SELECT id, name FROM users")}
-    for row in db.query("SELECT owner_id, type, name, details FROM investments"):
+    for row in db.query("SELECT * FROM investments"):
         try:
             details = json.loads(row["details"] or "{}")
         except (TypeError, ValueError):
@@ -50,10 +54,24 @@ def _existing_identity():
             "name": row["name"],
             "details": details,
         }
-        keys.update(fields.holding_keys(data))
+        record = {
+            "id": row["id"],
+            "owner_id": row["owner_id"],
+            "type": row["type"],
+            "name": row["name"],
+            "details": details,
+            "invested_amount": row["invested_amount"],
+            "current_value": row["current_value"],
+        }
+        for key in fields.holding_keys(data):
+            keys.add(key)
+            by_key.setdefault(key, record)
+        public_id = str(row["public_id"] or "").strip().upper()
+        if public_id:
+            by_id.setdefault(public_id, record)
         for key in fields.serial_keys(data):
             serial.setdefault(key, {})[row["owner_id"]] = names.get(row["owner_id"], "another member")
-    return keys, serial
+    return keys, serial, by_key, by_id
 
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
@@ -147,6 +165,18 @@ def _owner_exists(owner_id) -> bool:
     if owner_id is None:
         return False
     return db.query_one("SELECT id FROM users WHERE id = ? AND is_active = 1", (owner_id,)) is not None
+
+
+def _form_owner_id():
+    """An owner chosen explicitly in the request, never the signed-in user by default."""
+    raw = request.form.get("owner_id")
+    if raw in (None, ""):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if _owner_exists(value) else None
 
 
 # ---------------------------------------------------------------- auth
@@ -289,12 +319,29 @@ def me():
 
 # ---------------------------------------------------------------- meta
 
+_LOGO_EXTS = {".png", ".svg", ".webp", ".jpg", ".jpeg", ".ico"}
+
+
+def _issuer_logos() -> dict:
+    """Brand images dropped into static/img/logos, keyed by a name slug."""
+    folder = config.STATIC_DIR / "img" / "logos"
+    if not folder.is_dir():
+        return {}
+    logos = {}
+    for path in sorted(folder.iterdir()):
+        if path.is_file() and path.suffix.lower() in _LOGO_EXTS:
+            slug = re.sub(r"[^a-z0-9]+", "-", path.stem.lower()).strip("-")
+            if slug:
+                logos[slug] = f"/static/img/logos/{path.name}"
+    return logos
+
 
 @bp.get("/meta")
 @login_required
 def meta():
     user = current_user()
     payload = fields.meta()
+    payload["logos"] = _issuer_logos()
     payload["me"] = services.user_payload(user, user)
     payload["members"] = [
         {"id": m["id"], "name": m["name"], "email": m["email"], "role": m["role"]}
@@ -550,7 +597,7 @@ def _demat_payload_row(row):
 
 def _clean_demat(data: dict, existing=None, *, actor):
     errors = {}
-    owner_id = data.get("owner_id", existing["owner_id"] if existing else actor["id"])
+    owner_id = data.get("owner_id", existing["owner_id"] if existing else None)
     try:
         owner_id = int(owner_id)
     except (TypeError, ValueError):
@@ -1032,10 +1079,226 @@ def bulk_delete_investments():
     return jsonify(deleted=len(rows), ids=[row["id"] for row in rows])
 
 
+@bp.post("/investments/bulk-broker")
+@admin_required
+def bulk_set_broker():
+    actor = current_user()
+    data = body()
+    broker = str(data.get("broker") or "").strip()
+    if broker not in fields.BROKERS:
+        return jsonify(error="Choose a broker from the list"), 422
+    raw_ids = data.get("ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify(error="Select at least one holding"), 400
+    ids = []
+    for value in raw_ids:
+        try:
+            item_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if item_id > 0 and item_id not in ids:
+            ids.append(item_id)
+    if not ids:
+        return jsonify(error="Select at least one holding"), 400
+    if len(ids) > 500:
+        return jsonify(error="Tag up to 500 holdings at a time"), 400
+
+    placeholders = ",".join("?" for _ in ids)
+    rows = db.query(
+        f"SELECT id, type, details FROM investments WHERE id IN ({placeholders})", ids
+    )
+    if not rows:
+        return jsonify(error="Those holdings no longer exist"), 404
+    updated = 0
+    now = db.now()
+    for row in rows:
+        if row["type"] not in ("stocks", "etf"):
+            continue
+        try:
+            details = json.loads(row["details"] or "{}")
+        except (TypeError, ValueError):
+            details = {}
+        details["broker"] = broker
+        db.execute(
+            "UPDATE investments SET details = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(details, ensure_ascii=False), now, row["id"]),
+        )
+        updated += 1
+    if updated:
+        db.log_activity(
+            actor["id"], "updated",
+            f"Tagged {updated} stock/ETF holding(s) to {broker}", "investment", None,
+        )
+    return jsonify(updated=updated, skipped=len(rows) - updated, broker=broker)
+
+
 @bp.get("/dashboard")
 @login_required
 def dashboard():
     return jsonify(dashboard=services.dashboard())
+
+
+# ---------------------------------------------------------------- income
+
+
+def _income_row(income_id: int):
+    return db.query_one(services.INCOME_SELECT + " WHERE inc.id = ?", (income_id,))
+
+
+@bp.get("/incomes")
+@login_required
+def list_incomes():
+    actor = current_user()
+    raw = request.args.get("year", "").strip()
+    year = int(raw) if raw.isdigit() else None
+    return jsonify(income=services.income_summary(year, actor))
+
+
+@bp.post("/incomes")
+@admin_required
+def create_income():
+    actor = current_user()
+    data = body()
+    errors = {}
+    try:
+        investment_id = int(data.get("investment_id"))
+    except (TypeError, ValueError):
+        investment_id = None
+    investment = db.query_one(
+        "SELECT id, name, owner_id FROM investments WHERE id = ?", (investment_id,)
+    ) if investment_id else None
+    if investment is None:
+        errors["investment_id"] = "Choose an investment"
+    kind = str(data.get("kind") or "").strip()
+    if kind not in fields.INCOME_KIND_MAP:
+        errors["kind"] = "Choose dividend, interest, rent or other"
+    try:
+        amount = parse_number(data.get("amount"), 0)
+        if amount is None or amount <= 0:
+            errors["amount"] = "Enter an amount greater than zero"
+    except ValueError as exc:
+        errors["amount"] = str(exc)
+        amount = 0
+    status = str(data.get("status") or "pending").strip().lower()
+    if status not in {"pending", "credited"}:
+        errors["status"] = "Choose pending or credited"
+    try:
+        due_date = parse_date(data.get("due_date"))
+        credited_date = parse_date(data.get("credited_date"))
+    except ValueError as exc:
+        errors["due_date"] = str(exc)
+        due_date = credited_date = None
+    if credited_date and credited_date > date.today().isoformat():
+        errors["credited_date"] = "Credit date cannot be in the future"
+    if status == "credited" and not credited_date:
+        credited_date = date.today().isoformat()
+    if status == "pending":
+        credited_date = None
+        due_date = due_date or date.today().isoformat()
+    notes = str(data.get("notes") or "").strip()[:500]
+    if errors:
+        return jsonify(errors=errors), 422
+
+    now = db.now()
+    income_id = db.execute(
+        """INSERT INTO incomes (investment_id, owner_id, kind, amount, status, due_date,
+               credited_date, source, source_ref, notes, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', NULL, ?, ?, ?, ?)""",
+        (
+            investment["id"], investment["owner_id"], kind, round(amount, 2), status,
+            due_date, credited_date, notes or None, actor["id"], now, now,
+        ),
+    )
+    db.log_activity(
+        actor["id"], "created",
+        f"Recorded {fields.INCOME_KIND_MAP[kind]['label'].lower()} income of Rs {amount:,.2f}"
+        f" for {investment['name']}",
+        "income", income_id,
+    )
+    return jsonify(income=services.income_payload(_income_row(income_id), actor)), 201
+
+
+@bp.post("/incomes/<int:income_id>/status")
+@admin_required
+def update_income_status(income_id: int):
+    actor = current_user()
+    existing = _income_row(income_id)
+    if existing is None:
+        return jsonify(error="Income entry not found"), 404
+    data = body()
+    status = str(data.get("status") or "").strip().lower()
+    if status not in {"pending", "credited"}:
+        return jsonify(error="Choose pending or credited"), 422
+    try:
+        credited_date = parse_date(data.get("credited_date"))
+    except ValueError as exc:
+        return jsonify(errors={"credited_date": str(exc)}), 422
+    if status == "credited":
+        credited_date = credited_date or date.today().isoformat()
+        if credited_date > date.today().isoformat():
+            return jsonify(errors={"credited_date": "Credit date cannot be in the future"}), 422
+    else:
+        credited_date = None
+    db.execute(
+        "UPDATE incomes SET status = ?, credited_date = ?, updated_at = ? WHERE id = ?",
+        (status, credited_date, db.now(), income_id),
+    )
+    label = fields.INCOME_KIND_MAP.get(existing["kind"], {}).get("label", "Income")
+    if status == "credited":
+        db.log_activity(
+            actor["id"], "updated",
+            f"Marked {label.lower()} credit of Rs {existing['amount']:,.2f} as received"
+            f" for {existing['investment_name']}",
+            "income", income_id,
+        )
+    return jsonify(income=services.income_payload(_income_row(income_id), actor))
+
+
+@bp.delete("/incomes/<int:income_id>")
+@admin_required
+def delete_income(income_id: int):
+    actor = current_user()
+    existing = _income_row(income_id)
+    if existing is None:
+        return jsonify(error="Income entry not found"), 404
+    db.execute("UPDATE corporate_actions SET income_id = NULL WHERE income_id = ?", (income_id,))
+    db.execute("DELETE FROM incomes WHERE id = ?", (income_id,))
+    db.log_activity(
+        actor["id"], "deleted",
+        f"Deleted an income entry for {existing['investment_name']}", "income", income_id,
+    )
+    return jsonify(ok=True)
+
+
+# ---------------------------------------------------------------- corporate actions
+
+
+@bp.get("/corporate-actions")
+@admin_required
+def preview_corporate_actions():
+    try:
+        years = int(request.args.get("years", "1"))
+    except (TypeError, ValueError):
+        years = 1
+    try:
+        result = corporate.collect(years)
+    except Exception as exc:  # noqa: BLE001 - upstream sources are best-effort
+        return jsonify(error=f"Could not fetch corporate actions ({exc.__class__.__name__})"), 502
+    return jsonify(result=result)
+
+
+@bp.post("/corporate-actions/apply")
+@admin_required
+def apply_corporate_actions():
+    actor = current_user()
+    items = body().get("items")
+    if isinstance(items, list) and len(items) > 300:
+        return jsonify(error="Apply up to 300 corporate actions at a time"), 400
+    try:
+        result = corporate.apply_selected(items, actor)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 422
+    return jsonify(result=result)
 
 
 @bp.get("/activity")
@@ -1123,15 +1386,68 @@ def export_portfolio():
     )
 
 
-def _start_import(actor, preview_rows, payloads, warnings, filename, source, **extra):
+def _update_flag() -> bool:
+    return str(request.form.get("update_existing") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _file_hash(blob: bytes) -> str:
+    return hashlib.sha256(blob).hexdigest()
+
+
+def _imported_file(digest: str):
+    if not digest:
+        return None
+    return db.query_one(
+        """SELECT f.filename, f.source, f.rows, f.imported, f.updated, f.imported_at, u.name AS imported_by
+           FROM import_files f LEFT JOIN users u ON u.id = f.imported_by
+           WHERE f.file_hash = ?""",
+        (digest,),
+    )
+
+
+def _duplicate_file_response(record):
+    when = record["imported_at"] or ""
+    try:
+        stamp = datetime.fromisoformat(when).astimezone().strftime("%d %b %Y at %I:%M %p")
+    except (TypeError, ValueError):
+        stamp = when or "earlier"
+    who = record["imported_by"] or "an admin"
+    updated = record["updated"] or 0
+    applied = f"{record['imported']} of {record['rows']} rows added"
+    if updated:
+        applied += f", {updated} updated"
+    return jsonify(
+        error=(
+            f"This exact file was already imported on {stamp} by {who} "
+            f"({applied}). Nothing was imported again. "
+            "If holdings have changed, download a fresh export from Import / export and upload that."
+        ),
+        already_imported=True,
+    ), 409
+
+
+def _reject_seen_file(blob: bytes):
+    record = _imported_file(_file_hash(blob))
+    return _duplicate_file_response(record) if record else None
+
+
+def _start_import(actor, preview_rows, payloads, warnings, filename, source, file_hash="", **extra):
     """Store a parsed upload for review, then return it to the browser."""
     token = secrets.token_urlsafe(18)
     store = {
         "user_id": actor["id"],
         "created_at": db.now(),
         "source": source,
+        "filename": filename,
+        "file_hash": file_hash,
         "rows": [
-            {"payload": p["payload"], "preview": p["preview"], "valid": p["valid"], "duplicate": p["duplicate"]}
+            {
+                "payload": p["payload"],
+                "preview": p["preview"],
+                "valid": p["valid"],
+                "duplicate": p["duplicate"],
+                "update_id": p.get("update_id"),
+            }
             for p in payloads
         ],
     }
@@ -1139,7 +1455,8 @@ def _start_import(actor, preview_rows, payloads, warnings, filename, source, **e
         json.dumps(store, default=str), encoding="utf-8"
     )
 
-    ready = sum(1 for p in payloads if p["valid"] and not p["duplicate"])
+    updates = sum(1 for p in payloads if p["valid"] and p.get("update_id"))
+    ready = sum(1 for p in payloads if p["valid"] and not p["duplicate"] and not p.get("update_id"))
     duplicates = sum(1 for p in payloads if p["valid"] and p["duplicate"])
     invalid = sum(1 for p in payloads if not p["valid"])
     return jsonify(
@@ -1147,7 +1464,8 @@ def _start_import(actor, preview_rows, payloads, warnings, filename, source, **e
         preview=preview_rows[:500],
         preview_truncated=len(preview_rows) > 500,
         rows=len(preview_rows),
-        valid=ready,
+        valid=ready + updates,
+        updates=updates,
         duplicates=duplicates,
         invalid=invalid,
         sheet_warnings=warnings,
@@ -1172,16 +1490,25 @@ def import_preview():
         {"id": m["id"], "name": m["name"], "email": m["email"]}
         for m in services.member_totals()
     ]
-    existing, existing_serial = _existing_identity()
+    blob = upload.read()
+    if not blob:
+        return jsonify(error="That file is empty. Choose the filled template again."), 400
+    rejected = _reject_seen_file(blob)
+    if rejected:
+        return rejected
+    existing, existing_serial, existing_lookup, existing_by_id = _existing_identity()
     try:
         preview_rows, payloads, warnings = excelio.parse_workbook(
-            upload.stream, members, actor["id"], existing, existing_serial, _existing_record_ids()
+            BytesIO(blob), members, _form_owner_id(), existing, existing_serial, _existing_record_ids(),
+            existing_lookup=existing_lookup, existing_by_id=existing_by_id,
+            update_existing=_update_flag(),
         )
     except ValueError as exc:
         return jsonify(error=str(exc)), 422
 
     return _start_import(
-        actor, preview_rows, payloads, warnings, upload.filename, "workbook"
+        actor, preview_rows, payloads, warnings, upload.filename, "workbook",
+        file_hash=_file_hash(blob),
     )
 
 
@@ -1198,20 +1525,32 @@ def import_broker():
             "Choose Download or Export in the broker's holdings page."
         ), 400
 
+    owner_id = _form_owner_id()
+    if owner_id is None:
+        return jsonify(error="Choose the member this broker report belongs to"), 422
+
     members = [
         {"id": m["id"], "name": m["name"], "email": m["email"]}
         for m in services.member_totals()
     ]
-    existing, existing_serial = _existing_identity()
+    blob = upload.read()
+    if not blob:
+        return jsonify(error="That file is empty. Export the broker report again."), 400
+    rejected = _reject_seen_file(blob)
+    if rejected:
+        return rejected
+    existing, existing_serial, existing_lookup, _existing_by_id = _existing_identity()
     try:
         preview_rows, payloads, warnings, broker_name = broker.parse_broker(
-            upload.stream, upload.filename, members, actor["id"], existing, existing_serial
+            BytesIO(blob), upload.filename, members, owner_id, existing, existing_serial,
+            existing_lookup=existing_lookup, update_existing=_update_flag(),
         )
     except ValueError as exc:
         return jsonify(error=str(exc)), 422
 
     return _start_import(
-        actor, preview_rows, payloads, warnings, upload.filename, "broker", broker=broker_name
+        actor, preview_rows, payloads, warnings, upload.filename, "broker",
+        file_hash=_file_hash(blob), broker=broker_name,
     )
 
 
@@ -1265,11 +1604,17 @@ def import_commit():
     if problem:
         return problem
 
-    seen, seen_serial = _existing_identity()
+    digest = str(store.get("file_hash") or "")
+    if digest:
+        record = _imported_file(digest)
+        if record:
+            return _duplicate_file_response(record)
+
+    seen, seen_serial, _, _ = _existing_identity()
     existing_ids = _existing_record_ids()
     names = {row["id"]: row["name"] for row in db.query("SELECT id, name FROM users")}
     now = db.now()
-    imported = skipped = duplicates = 0
+    imported = updated = skipped = duplicates = 0
     conn = db.get_db()
     for entry in store.get("rows", []):
         if not entry.get("valid"):
@@ -1278,6 +1623,23 @@ def import_commit():
         data, errors = fields.validate_investment(entry["payload"])
         if errors or not _owner_exists(data.get("owner_id")):
             skipped += 1
+            continue
+        update_id = entry.get("update_id")
+        if update_id:
+            cursor = conn.execute(
+                """UPDATE investments
+                   SET invested_amount = ?, current_value = ?, details = ?, updated_at = ?
+                   WHERE id = ? AND owner_id = ?""",
+                (
+                    data["invested_amount"], data["current_value"],
+                    json.dumps(data["details"], ensure_ascii=False), now,
+                    update_id, data["owner_id"],
+                ),
+            )
+            if cursor.rowcount:
+                updated += 1
+            else:
+                skipped += 1
             continue
         owner = data.get("owner_id")
         record_id = str(entry["payload"].get("public_id") or "").strip().upper()
@@ -1311,12 +1673,31 @@ def import_commit():
         for serial in row_serials:
             seen_serial.setdefault(serial, {})[owner] = names.get(owner, "another member")
         imported += 1
+    if (imported or updated) and digest:
+        conn.execute(
+            """INSERT OR IGNORE INTO import_files
+               (file_hash, filename, source, rows, imported, updated, imported_by, imported_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                digest,
+                str(store.get("filename") or ""),
+                str(store.get("source") or "workbook"),
+                len(store.get("rows", [])),
+                imported,
+                updated,
+                actor["id"],
+                now,
+            ),
+        )
     conn.commit()
     path.unlink(missing_ok=True)
-    if imported:
+    if imported or updated:
         source = "a broker report" if store.get("source") == "broker" else "Excel"
-        db.log_activity(actor["id"], "imported", f"Imported {imported} holding(s) from {source}", "investment", None)
-    return jsonify(imported=imported, skipped=skipped, duplicates=duplicates)
+        summary = f"Imported {imported} holding(s) from {source}"
+        if updated:
+            summary += f", updated {updated} existing holding(s)"
+        db.log_activity(actor["id"], "imported", summary, "investment", None)
+    return jsonify(imported=imported, updated=updated, skipped=skipped, duplicates=duplicates)
 
 
 @bp.post("/demo")

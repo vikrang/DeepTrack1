@@ -146,6 +146,58 @@ CREATE TABLE IF NOT EXISTS mf_schemes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_mf_schemes_name ON mf_schemes (name COLLATE NOCASE);
+
+CREATE TABLE IF NOT EXISTS incomes (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    investment_id INTEGER NOT NULL REFERENCES investments (id) ON DELETE CASCADE,
+    owner_id      INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    kind          TEXT    NOT NULL CHECK (kind IN ('dividend', 'interest', 'rent', 'other')),
+    amount        REAL    NOT NULL DEFAULT 0,
+    status        TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'credited')),
+    due_date      TEXT,
+    credited_date TEXT,
+    source        TEXT,
+    source_ref    TEXT,
+    notes         TEXT,
+    created_by    INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_incomes_investment ON incomes (investment_id);
+CREATE INDEX IF NOT EXISTS idx_incomes_owner ON incomes (owner_id);
+CREATE INDEX IF NOT EXISTS idx_incomes_status ON incomes (status);
+CREATE INDEX IF NOT EXISTS idx_incomes_credited ON incomes (credited_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_incomes_source_ref
+    ON incomes (source_ref) WHERE source_ref IS NOT NULL AND source_ref <> '';
+
+CREATE TABLE IF NOT EXISTS corporate_actions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    investment_id INTEGER NOT NULL REFERENCES investments (id) ON DELETE CASCADE,
+    symbol        TEXT,
+    kind          TEXT    NOT NULL CHECK (kind IN ('dividend', 'bonus')),
+    ex_date       TEXT    NOT NULL,
+    detail        TEXT    NOT NULL DEFAULT '',
+    value         REAL,
+    source        TEXT,
+    income_id     INTEGER REFERENCES incomes (id) ON DELETE SET NULL,
+    applied_by    INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    applied_at    TEXT    NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_corporate_actions_unique
+    ON corporate_actions (investment_id, kind, ex_date, detail);
+
+CREATE TABLE IF NOT EXISTS import_files (
+    file_hash   TEXT PRIMARY KEY,
+    filename    TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    rows        INTEGER NOT NULL DEFAULT 0,
+    imported    INTEGER NOT NULL DEFAULT 0,
+    updated     INTEGER NOT NULL DEFAULT 0,
+    imported_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    imported_at TEXT NOT NULL
+);
 """
 
 
@@ -192,11 +244,18 @@ def _ensure_public_id(conn) -> None:
     )
 
 
+def _ensure_import_files(conn) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(import_files)")}
+    if "updated" not in columns:
+        conn.execute("ALTER TABLE import_files ADD COLUMN updated INTEGER NOT NULL DEFAULT 0")
+
+
 def init_db(app) -> None:
     with app.app_context():
         conn = get_db()
         conn.executescript(SCHEMA)
         _ensure_public_id(conn)
+        _ensure_import_files(conn)
         conn.commit()
 
 

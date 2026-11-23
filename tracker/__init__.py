@@ -51,6 +51,21 @@ def create_app(test_config: dict | None = None) -> Flask:
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.get("/manifest.webmanifest")
+    def manifest():
+        response = send_from_directory(
+            config.STATIC_DIR, "manifest.webmanifest", mimetype="application/manifest+json"
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    @app.get("/sw.js")
+    def service_worker():
+        response = send_from_directory(config.STATIC_DIR, "sw.js", mimetype="text/javascript")
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Service-Worker-Allowed"] = "/"
+        return response
+
     @app.after_request
     def security_headers(response):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")

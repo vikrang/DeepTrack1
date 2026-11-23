@@ -1,5 +1,4 @@
-import { icon } from "./icons.js";
-import { donutChart } from "./charts.js";
+import { icon } from "./icons.js?v=20261122e";
 
 /* ============================================================
    Utilities
@@ -36,6 +35,11 @@ function fmtDate(iso) {
   const date = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
   if (Number.isNaN(date.getTime())) return esc(iso);
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function todayIso() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 function shortDate(iso) {
@@ -75,6 +79,241 @@ function avatar(name, cls = "") {
   const color = AVATAR_COLORS[hashOf(name) % AVATAR_COLORS.length];
   return `<div class="avatar ${cls}" style="background:${color}" aria-hidden="true">${esc(initials(name))}</div>`;
 }
+const BROKER_BRANDS = {
+  "Zerodha": { bg: "#387ed1", mark: "Z" },
+  "Groww": { bg: "#00b386", mark: "G" },
+  "Upstox": { bg: "#5a2a8f", mark: "U" },
+  "ICICI Direct": { bg: "#f26e21", mark: "I" },
+  "HDFC Securities": { bg: "#004c8f", mark: "H" },
+  "Kotak Securities": { bg: "#ed1c24", mark: "K" },
+  "Angel One": { bg: "#f58220", mark: "A" },
+  "Motilal Oswal": { bg: "#f2b600", mark: "MO", fg: "#1f2937" },
+  "Sharekhan": { bg: "#f2a900", mark: "S", fg: "#1f2937" },
+  "5paisa": { bg: "#ff6f00", mark: "5" },
+  "Axis Direct": { bg: "#97144d", mark: "A" },
+  "SBI Securities": { bg: "#2d5ba9", mark: "SBI" },
+  "Dhan": { bg: "#00b899", mark: "D" },
+  "INDmoney": { bg: "#1b1f3b", mark: "IN" },
+  "Other": { bg: "#64748b", mark: "O" },
+};
+function brokerBadge(name, cls = "") {
+  const label = String(name || "").trim();
+  if (!label) return "";
+  const brand = BROKER_BRANDS[label] || {};
+  return `<span class="bmark ${cls}" style="background:${safeColor(brand.bg, "#64748b")};color:${brand.fg || "#fff"}" title="${esc(label)}" aria-label="${esc(label)}">${esc(brand.mark || initials(label))}</span>`;
+}
+const TYPE_BRANDS = {
+  stocks: { bg: "#6366f1", mark: "EQ" },
+  mutual_funds: { bg: "#7c3aed", mark: "MF" },
+  etf: { bg: "#4f46e5", mark: "ET" },
+  fd: { bg: "#0ea5e9", mark: "FD" },
+  rd: { bg: "#0284c7", mark: "RD" },
+  bonds: { bg: "#0369a1", mark: "BD" },
+  ppf: { bg: "#059669", mark: "PF" },
+  epf: { bg: "#047857", mark: "EP" },
+  nps: { bg: "#0d9488", mark: "NP" },
+  small_savings: { bg: "#0891b2", mark: "PO" },
+  real_estate: { bg: "#f59e0b", mark: "RE" },
+  jewellery: { bg: "#d97706", mark: "GL" },
+  crypto: { bg: "#f97316", mark: "CR" },
+  insurance: { bg: "#e11d48", mark: "IN" },
+};
+function typeBadge(item, cls = "") {
+  const key = typeof item === "string" ? item : item?.type;
+  if (!key) return "";
+  const meta = (state.meta?.types || []).find((t) => t.key === key);
+  const brand = TYPE_BRANDS[key] || {};
+  const label = meta?.label || key;
+  return `<span class="bmark tmark ${cls}" style="background:${safeColor(brand.bg)};color:${brand.fg || "#fff"}" title="${esc(label)}" aria-label="${esc(label)}">${esc(brand.mark || initials(label))}</span>`;
+}
+const ISSUER_BRANDS = {
+  "HDFC Bank": { bg: "#004c8f", mark: "H" },
+  "ICICI Bank": { bg: "#f26e21", mark: "I" },
+  "State Bank of India": { bg: "#2d5ba9", mark: "SBI" },
+  "Axis Bank": { bg: "#97144d", mark: "A" },
+  "Kotak Mahindra Bank": { bg: "#ed1c24", mark: "K" },
+  "Bajaj Finance": { bg: "#0b5cad", mark: "B" },
+  "Reliance Industries": { bg: "#0b3d91", mark: "R" },
+  "Titan Company": { bg: "#5b2a86", mark: "T" },
+  "Bharti Airtel": { bg: "#e40000", mark: "A" },
+  "Infosys": { bg: "#007cc3", mark: "IN" },
+  "Tata Consultancy Services": { bg: "#1d3d78", mark: "TCS" },
+  "ITC": { bg: "#1e4b8f", mark: "ITC" },
+  "Hindustan Unilever": { bg: "#1f5fa9", mark: "HU" },
+  "Larsen & Toubro": { bg: "#f5a623", mark: "LT", fg: "#1f2937" },
+  "Asian Paints": { bg: "#e2231a", mark: "AP" },
+  "Maruti Suzuki": { bg: "#e30613", mark: "M" },
+  "Wipro": { bg: "#341c6c", mark: "W" },
+  "HCL Technologies": { bg: "#0f4c81", mark: "HCL" },
+  "Sun Pharmaceutical Industries": { bg: "#f58220", mark: "S" },
+  "SBI Mutual Fund": { bg: "#2d5ba9", mark: "SBI" },
+  "HDFC Mutual Fund": { bg: "#004c8f", mark: "H" },
+  "ICICI Prudential MF": { bg: "#f26e21", mark: "I" },
+  "Axis Mutual Fund": { bg: "#97144d", mark: "A" },
+  "Kotak Mahindra MF": { bg: "#ed1c24", mark: "K" },
+  "UTI Mutual Fund": { bg: "#00539f", mark: "UTI" },
+  "Nippon India MF": { bg: "#c8102e", mark: "N" },
+  "Mirae Asset MF": { bg: "#ffb100", mark: "M", fg: "#1f2937" },
+  "Parag Parikh MF": { bg: "#0f766e", mark: "PP" },
+  "LIC of India": { bg: "#00539f", mark: "LIC" },
+  "HDFC Life": { bg: "#004c8f", mark: "H" },
+  "SBI Life": { bg: "#2d5ba9", mark: "SBI" },
+  "ICICI Prudential Life": { bg: "#f26e21", mark: "I" },
+  "Star Health": { bg: "#e11d48", mark: "SH" },
+  "Niva Bupa": { bg: "#00a3e0", mark: "NB" },
+  "India Post": { bg: "#b91c1c", mark: "IP" },
+  "Bajaj Allianz Life": { bg: "#0b5cad", mark: "B" },
+  "Bitcoin (BTC)": { bg: "#f7931a", mark: "BTC" },
+  "Ethereum (ETH)": { bg: "#627eea", mark: "ETH" },
+  "Tether (USDT)": { bg: "#26a17b", mark: "U" },
+  "Solana (SOL)": { bg: "#14f195", mark: "SOL", fg: "#0b1f16" },
+};
+const MARK_COLORS = ["#6366f1", "#0ea5e9", "#059669", "#d97706", "#e11d48", "#7c3aed",
+  "#0284c7", "#f97316", "#0d9488", "#4f46e5", "#b45309", "#be123c"];
+function issuerChoice(value, fallback) {
+  const text = String(value || "").trim();
+  const usable = text && text.toLowerCase() !== "other";
+  return usable ? text : (fallback || "");
+}
+function issuerName(item) {
+  const d = item?.details || {};
+  switch (item?.type) {
+    case "mutual_funds": return issuerChoice(d.amc, item.name);
+    case "fd":
+    case "rd": return issuerChoice(d.bank, issuerChoice(d.company_name) || item.name);
+    case "bonds": return issuerChoice(d.issuer, item.name);
+    case "ppf":
+    case "small_savings": return issuerChoice(d.institution, item.name);
+    case "epf": return issuerChoice(d.employer, item.name);
+    case "nps": return issuerChoice(d.fund_manager, item.name);
+    case "insurance": return issuerChoice(d.insurer, item.name);
+    case "crypto": return issuerChoice(d.coin, item.name);
+    case "jewellery": return issuerChoice(d.jeweller, "");
+    case "stocks":
+    case "etf": return item.name || "";
+    default: return "";
+  }
+}
+function issuerMark(name) {
+  const words = String(name || "")
+    .replace(/\b(Limited|Ltd|Private|Pvt|Mutual Fund|Company|Industries|Corporation|Services|India|Bank|and)\b/gi, " ")
+    .split(/\s+/).filter(Boolean);
+  if (!words.length) return initials(name);
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+const LOGO_ALIASES = {
+  "axisamc-goldaxis": "axis-mf",
+  "motilalamc-modefence": "motilal-oswal-mf",
+  "nip-ind-etf-gold-bees": "nippon-india-mf",
+  "reserve-bank-of-india": "rbi",
+  "sivereign-gold": "rbi",
+  "sovereign-gold-bond": "rbi",
+  "state-bank-of-india": "sbi",
+  "icici-bank-ppf": "icici-bank",
+  "hdfc-life-insurance": "hdfc-life",
+  "btc": "bitcoin",
+  "eth": "ethereum",
+  "usdt": "tether",
+  "sol": "solana",
+  "hindustan-unilever": "hul",
+  "kotak-mahindra-bank": "kotak-bank",
+  "kotak-mahindra": "kotak-bank",
+  "larsen-toubro": "lnt",
+  "larsen-and-toubro": "lnt",
+  "kaveri-seed": "kaveri-seeds",
+  "kwality-wall-s": "kwality-walls",
+  "kwality-wall-s-india-l": "kwality-walls",
+  "north-east-small-finance-bank": "north-east-sfb",
+  "utkarsh": "utkarshbnk",
+  "utkarsh-small-finance-bank": "utkarshbnk",
+  "suryoday": "suryoday-sfb",
+  "suryodhay": "suryoday-sfb",
+  "suryoday-small-finance-bank": "suryoday-sfb",
+  "equitas": "equitas-sfb",
+  "equitas-small-finance-bank": "equitas-sfb",
+  "slice-sfb": "slice",
+  "slice-small-finance-bank": "slice",
+  "tamil-nadu-power-fin": "tamil-nadu-power-finance",
+  "tamilnadu-power-finance": "tamil-nadu-power-finance",
+  "tamil-nadu-power-finance-and-infrastructure": "tamil-nadu-power-finance",
+  "tamil-nadu-power-finance-and-infrastructure-corporation": "tamil-nadu-power-finance",
+  "tamil-nadu-power-finance-and-infrastructure-development-corporation": "tamil-nadu-power-finance",
+  "tata-consultancy-serv": "tcs",
+  "tata-consultancy-serv-lt": "tcs",
+  "tata-consultancy-services": "tcs",
+  "brainbees": "firstcry",
+  "brainbees-solutions": "firstcry",
+  "computer-age-mngt-ser": "cams",
+  "computer-age-management-services": "cams",
+  "dr-reddy-s-laboratories": "dr-reddys",
+  "dr-reddys-laboratories": "dr-reddys",
+  "jio-fin": "jio-financial",
+  "jio-fin-services": "jio-financial",
+  "tanla-platforms": "tanla",
+  "hindustan-aeronautics": "hal",
+  "h-g-infra": "hg-infra",
+  "h-g-infra-engineering": "hg-infra",
+  "narayana-hrudayalaya": "narayana-health",
+};
+const LEGAL_TAIL = /-(limited|ltd|co|company|corp|corporation|inc|plc|pvt|private|india|enterprises|holdings)$/;
+function logoFor(name) {
+  const logos = state.meta?.logos || {};
+  const keys = Object.keys(logos);
+  if (!keys.length) return "";
+  let slug = brandSlug(name);
+  if (!slug) return "";
+  const seen = new Set();
+  for (let i = 0; i < 4; i += 1) {
+    if (!slug || seen.has(slug)) break;
+    seen.add(slug);
+    if (logos[slug]) return logos[slug];
+    const alias = LOGO_ALIASES[slug];
+    if (alias && logos[alias]) return logos[alias];
+    slug = slug.replace(LEGAL_TAIL, "");
+  }
+  const padded = `-${slug}-`;
+  let best = "";
+  for (const key of keys) {
+    if (key.length > best.length && padded.includes(`-${key}-`) && key.length >= 3) best = key;
+  }
+  return best ? logos[best] : "";
+}
+function issuerBadgeFromName(name, cls = "") {
+  const label = String(name || "").trim();
+  if (!label) return "";
+  const logo = logoFor(label);
+  if (logo) {
+    return `<span class="bmark blogo ${cls}" title="${esc(label)}" aria-label="${esc(label)}"><img src="${esc(logo)}" alt="" loading="lazy"></span>`;
+  }
+  const known = ISSUER_BRANDS[label] || {};
+  const bg = known.bg || MARK_COLORS[hashOf(label) % MARK_COLORS.length];
+  return `<span class="bmark tmark ${cls}" style="background:${bg};color:${known.fg || "#fff"}" title="${esc(label)}" aria-label="${esc(label)}">${esc(known.mark || issuerMark(label))}</span>`;
+}
+function brandSlug(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+function symbolLogo(item) {
+  if (!item || (item.type !== "stocks" && item.type !== "etf")) return "";
+  const symbol = String(item.symbol || item.details?.symbol || "").trim();
+  return symbol ? state.meta?.logos?.[brandSlug(symbol)] || "" : "";
+}
+function logoMark(label, logo, cls) {
+  return `<span class="bmark blogo ${cls}" title="${esc(label)}" aria-label="${esc(label)}"><img src="${esc(logo)}" alt="" loading="lazy"></span>`;
+}
+function issuerBadge(item, cls = "") {
+  const name = item?.issuer || issuerName(item);
+  const symbol = symbolLogo(item);
+  if (symbol) {
+    return `<span class="bmark blogo bsym ${cls}" title="${esc(name || item?.symbol || "")}" aria-label="${esc(name || item?.symbol || "")}"><img src="${esc(symbol)}" alt="" loading="lazy"></span>`;
+  }
+  const logo = name ? logoFor(name) : "";
+  if (logo) return logoMark(name, logo, cls);
+  return name ? issuerBadgeFromName(name, cls) : typeBadge(item, cls);
+}
+function holdingBadge(item) {
+  return issuerBadge(item);
+}
 function safeColor(color, fallback = "#6366f1") {
   return /^#[0-9a-fA-F]{6}$/.test(color || "") ? color : fallback;
 }
@@ -103,10 +342,14 @@ const state = {
   members: [],
   investments: [],
   dashboard: null,
+  income: null,
+  corporate: null,
   view: "dashboard",
   filters: { q: "", category: "", type: "", owner: "", sort: "updated", dir: "desc" },
+  layout: "flat",
   importPreview: null,
   importResult: null,
+  importUpdateExisting: false,
   marketStatus: null,
   marketLoading: false,
   storageStatus: null,
@@ -512,17 +755,26 @@ async function startApp() {
 }
 
 async function refreshData() {
-  const [meta, members, dashboard, investments] = await Promise.all([
+  const incomePath = state.income?.year ? `/incomes?year=${encodeURIComponent(state.income.year)}` : "/incomes";
+  const [meta, members, dashboard, investments, income] = await Promise.all([
     api("/meta"),
     api("/members"),
     api("/dashboard"),
     api("/investments"),
+    api(incomePath),
   ]);
   state.meta = meta;
   state.me = meta.me;
   state.members = members.members;
   state.dashboard = dashboard.dashboard;
   state.investments = investments.items;
+  state.income = income.income;
+}
+
+async function refreshDashboard() {
+  await refreshData();
+  renderUserChrome();
+  if (state.view === "dashboard") renderDashboard();
 }
 
 async function refreshAndRender() {
@@ -585,6 +837,11 @@ function gainPill(value, pct, compact = false) {
   return `<span class="pill ${positive ? "pill-ok" : "pill-bad"}">${icon(positive ? "trendUp" : "trendDown")}${text}</span>`;
 }
 
+function fyLabel(year) {
+  const value = Number(year) || new Date().getFullYear();
+  return `FY ${value - 1}-${String(value).slice(-2)}`;
+}
+
 function renderDashboard() {
   const dash = state.dashboard;
   if (!dash) {
@@ -593,9 +850,10 @@ function renderDashboard() {
   }
   const totals = dash.totals;
   const firstName = (state.me?.name || "there").split(" ")[0];
-  const sipItems = state.investments.filter((i) => i.type === "mutual_funds" && Number(i.details.sip_amount) > 0);
-  const sipTotal = sipItems.reduce((sum, i) => sum + Number(i.details.sip_amount), 0);
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
+  const pendingText = totals.pending_credits
+    ? `${totals.pending_credits} credit${totals.pending_credits === 1 ? "" : "s"} worth ${compactMoney(totals.pending_credit_amount)} awaiting bank credit`
+    : "Dividends, interest and rent credited this year";
 
   const view = $("#view");
   view.innerHTML = `
@@ -611,17 +869,17 @@ function renderDashboard() {
     </div>
 
     <div class="kpi-grid">
-      <div class="kpi kpi-primary">
+      <div class="kpi kpi-primary kpi-link" data-drill="investments" role="button" tabindex="0" title="View all holdings">
         <div class="kpi-label">${icon("wallet")} Portfolio value</div>
         <div class="kpi-value" title="${inr2(totals.value)}">${compactMoney(totals.value)}</div>
         <div class="kpi-foot">${gainPill(totals.gain, totals.gain_pct, true)}<span>since invested</span></div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-link" data-drill="investments" data-sort="invested" role="button" tabindex="0" title="View holdings sorted by invested amount">
         <div class="kpi-label">${icon("rupee")} Amount invested</div>
         <div class="kpi-value" title="${inr2(totals.invested)}">${compactMoney(totals.invested)}</div>
         <div class="kpi-foot">Across ${totals.count} holdings</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-link" data-drill="investments" data-sort="gain" role="button" tabindex="0" title="View holdings sorted by gain">
         <div class="kpi-label">${icon("trendUp")} Unrealised gain</div>
         <div class="kpi-value" style="color:${totals.gain >= 0 ? "var(--ok)" : "var(--bad)"}" title="${inr2(totals.gain)}">
           ${totals.gain >= 0 ? "+" : "−"}${compactMoney(Math.abs(totals.gain))}
@@ -629,18 +887,22 @@ function renderDashboard() {
         <div class="kpi-foot">${pctText(totals.gain_pct)} overall return</div>
       </div>
       <div class="kpi">
-        <div class="kpi-label">${icon("refresh")} Monthly SIPs</div>
-        <div class="kpi-value" title="${inr2(sipTotal)}">${compactMoney(sipTotal)}</div>
-        <div class="kpi-foot">${sipItems.length ? `${sipItems.length} active SIP${sipItems.length === 1 ? "" : "s"}` : "No SIPs recorded yet"}</div>
+        <div class="kpi-label">${icon("calendar")} Income · ${esc(totals.income_year_label || fyLabel())}</div>
+        <div class="kpi-value" title="${inr2(totals.income_year)}">${compactMoney(totals.income_year)}</div>
+        <div class="kpi-foot">${esc(pendingText)}</div>
       </div>
     </div>
 
     ${totals.count === 0 ? emptyDashboard() : `
     <div class="dash-grid">
-      ${allocationCard(dash)}
-      ${mixCard(dash)}
-      ${holdingsCard(dash)}
+      ${assetClassCard(dash)}
       ${ownersCard(dash)}
+      ${brokersCard(dash)}
+      ${incomeCard()}
+      ${creditChecklistCard()}
+      ${bankCard()}
+      ${isAdmin() ? corporateCard() : ""}
+      ${holdingsCard(dash)}
       ${maturitiesCard(dash)}
       ${activityCard(dash)}
     </div>`}
@@ -666,61 +928,364 @@ function emptyDashboard() {
     </div>`;
 }
 
-function allocationCard(dash) {
-  const total = dash.totals.value || 0;
-  const segments = dash.categories.map((c) => ({ label: c.label, value: c.value, color: safeColor(c.color) }));
-  return `
-    <section class="card card-pad span-5 allocation">
-      <div class="card-head">
-        <div>
-          <div class="card-title">Asset allocation</div>
-          <div class="card-sub">By asset class</div>
-        </div>
-        <button class="card-action" type="button" data-nav="investments">View all ${icon("chevronRight", "sm")}</button>
-      </div>
-      <div class="allocation-body">
-        <div class="donut-wrap">
-          ${donutChart(segments, { size: 176, stroke: 24 })}
-          <div class="donut-center">
-            <div class="dc-label">Total</div>
-            <div class="dc-value">${compactMoney(total)}</div>
-          </div>
-        </div>
-        <div class="legend">
-          ${dash.categories.map((c) => `
-            <div class="legend-row">
-              <span class="dot" style="background:${safeColor(c.color)}"></span>
-              <span class="lbl">${esc(c.label)}</span>
-              <span class="val">${compactMoney(c.value)}</span>
-              <span class="pct">${nf(1).format(c.share)}%</span>
-            </div>`).join("")}
-        </div>
-      </div>
-    </section>`;
+function incomeKind(key) {
+  return (state.meta?.income_kinds || []).find((k) => k.key === key) || { label: key, color: "#6366f1" };
 }
 
-function mixCard(dash) {
-  const types = dash.types.slice(0, 6);
-  const max = Math.max(...types.map((t) => t.value), 1);
+function amountCell(value) {
+  const amount = Number(value) || 0;
+  return amount ? inr(amount) : `<span class="muted">—</span>`;
+}
+
+function bankLine(source) {
+  const bank = source?.bank || source;
+  const name = bank?.bank_name || bank?.name || "";
+  const account = bank?.account_number || bank?.account || "";
+  if (!name) return `<span class="text-warn">Bank details not added</span>`;
+  return `${esc(name)}${account ? ` · ${esc(account)}` : ""}`;
+}
+
+function assetClassCard(dash) {
   return `
     <section class="card card-pad span-7">
       <div class="card-head">
         <div>
-          <div class="card-title">Where the money sits</div>
-          <div class="card-sub">Current value by instrument type</div>
+          <div class="card-title">Asset class spread</div>
+          <div class="card-sub">Current value, invested and gain by class</div>
         </div>
-        <span class="pill pill-muted">${dash.types.length} types</span>
+        <button class="card-action" type="button" data-nav="investments">All holdings ${icon("chevronRight", "sm")}</button>
       </div>
-      ${types.length ? `<div class="bar-list">
-        ${types.map((t) => `
-          <div class="bar-row">
-            <div class="top">
-              <div class="name"><span class="cat-dot" style="background:${safeColor(t.color)}"></span><span class="t">${esc(t.label)}</span></div>
-              <div class="value">${compactMoney(t.value)}</div>
+      <div class="spread-list">
+        ${dash.categories.map((cat) => {
+          const types = dash.types.filter((t) => t.category === cat.key && t.value > 0);
+          const gain = Number(cat.gain) || 0;
+          return `<div class="spread-row">
+            <div class="spread-hit drillable" data-drill="investments" data-category="${cat.key}" role="button" tabindex="0" title="View ${esc(cat.label)} holdings">
+              <div class="spread-head">
+                <div class="spread-title">
+                  <span class="cat-dot" style="background:${safeColor(cat.color)}"></span>
+                  <span>${esc(cat.label)}</span>
+                  <span class="spread-count">${cat.count} holding${cat.count === 1 ? "" : "s"}</span>
+                </div>
+                <div class="spread-figures">
+                  <strong>${compactMoney(cat.value)}</strong>
+                  <span>${nf(1).format(cat.share)}%</span>
+                </div>
+              </div>
+              <div class="bar-track"><div class="bar-fill" style="width:${Math.max(cat.share, cat.value ? 1.5 : 0)}%;background:${safeColor(cat.color)}"></div></div>
+              <div class="spread-meta">
+                <span>Invested ${compactMoney(cat.invested)}</span>
+                <span style="color:${gain >= 0 ? "var(--ok)" : "var(--bad)"}">${gain >= 0 ? "+" : "−"}${compactMoney(Math.abs(gain))} gain</span>
+              </div>
             </div>
-            <div class="bar-track"><div class="bar-fill" style="width:${Math.max((t.value / max) * 100, 2)}%;background:${safeColor(t.color)}"></div></div>
-          </div>`).join("")}
-      </div>` : `<p class="muted" style="font-size:13px">No holdings yet.</p>`}
+            ${types.length ? `<div class="spread-types">
+              ${types.map((t) => `
+                <button class="spread-type drillable" type="button" data-drill="investments" data-type="${t.key}" title="View ${esc(t.label)} holdings">
+                  <span class="st-name">${esc(t.label)}</span>
+                  <span class="st-share">${nf(1).format(t.share)}%</span>
+                  <span class="st-val">${compactMoney(t.value)}</span>
+                  <span class="st-go">${icon("chevronRight", "sm")}</span>
+                </button>`).join("")}
+            </div>` : ""}
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="spread-total drillable" data-drill="investments" role="button" tabindex="0" title="View all holdings">
+        <span>Total portfolio</span>
+        <strong>${compactMoney(dash.totals.value)}</strong>
+      </div>
+    </section>`;
+}
+
+function ownersCard(dash) {
+  const total = dash.totals.value || 0;
+  const members = state.members
+    .slice()
+    .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0) || a.name.localeCompare(b.name));
+  return `
+    <section class="card card-pad span-5">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Member-wise investment</div>
+          <div class="card-sub">Value and share by family member</div>
+        </div>
+        <button class="card-action" type="button" data-nav="members">Members ${icon("chevronRight", "sm")}</button>
+      </div>
+      ${members.length ? `<div class="table-wrap">
+        <table class="mini-table member-table">
+          <thead><tr><th>Member</th><th class="num">Invested</th><th class="num">Value</th><th class="num hide-sm">Share</th></tr></thead>
+          <tbody>
+            ${members.map((member) => {
+              const value = Number(member.value) || 0;
+              const invested = Number(member.invested) || 0;
+              const share = total ? (value / total) * 100 : 0;
+              const gain = value - invested;
+              return `<tr class="drillable" data-drill="investments" data-owner="${member.id}" title="View ${esc(member.name)}'s holdings">
+                <td>
+                  <div class="cell-person">
+                    ${avatar(member.name, "sm")}
+                    <div>
+                      <div class="cell-name">${esc(member.name)}</div>
+                      <div class="cell-sub">${member.holdings} holding${member.holdings === 1 ? "" : "s"}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="num">${compactMoney(invested)}</td>
+                <td class="num">${compactMoney(value)}<div class="cell-sub" style="color:${gain >= 0 ? "var(--ok)" : "var(--bad)"}">${gain >= 0 ? "+" : "−"}${compactMoney(Math.abs(gain))}</div></td>
+                <td class="num hide-sm">
+                  <div class="share-cell">
+                    <span>${nf(1).format(share)}%</span>
+                    <div class="mini-bar"><span style="width:${Math.max(share, value ? 1.5 : 0)}%"></span></div>
+                  </div>
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>` : `<p class="muted" style="font-size:13px">No members yet.</p>`}
+    </section>`;
+}
+
+function brokersCard(dash) {
+  const brokers = dash.brokers || [];
+  const untagged = Number(dash.untagged_broker_count) || 0;
+  return `
+    <section class="card card-pad span-12">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Investments by broker</div>
+          <div class="card-sub">Stocks and ETFs placed through each broker or DP</div>
+        </div>
+        ${brokers.length ? `<button class="card-action" type="button" data-nav="investments">All holdings ${icon("chevronRight", "sm")}</button>` : ""}
+      </div>
+      ${brokers.length ? `<div class="broker-grid">
+        ${brokers.map((b) => {
+          const gain = Number(b.gain) || 0;
+          return `<button class="broker-tile" type="button" data-drill="investments" data-search="${esc(b.name)}" title="View ${esc(b.name)} holdings">
+            ${brokerBadge(b.name, "lg")}
+            <span class="broker-main">
+              <span class="broker-name">${esc(b.name)}</span>
+              <span class="broker-sub">${b.count} holding${b.count === 1 ? "" : "s"} · ${nf(1).format(b.share)}% of portfolio</span>
+            </span>
+            <span class="broker-figs">
+              <strong>${compactMoney(b.value)}</strong>
+              <span style="color:${gain >= 0 ? "var(--ok)" : "var(--bad)"}">${gain >= 0 ? "+" : "−"}${compactMoney(Math.abs(gain))}</span>
+            </span>
+          </button>`;
+        }).join("")}
+      </div>` : `<div class="empty compact" style="padding:24px 12px">
+        <div class="broker-strip" aria-hidden="true">${(state.meta?.brokers || []).map((name) => brokerBadge(name)).join("")}</div>
+        <h3>No broker tagged yet</h3>
+        <p>Choose a broker on any stock or ETF, or select several under Investments and tag them together.</p>
+        <div class="actions"><button class="btn btn-secondary btn-sm" type="button" data-nav="investments">${icon("building")} Open holdings</button></div>
+      </div>`}
+      ${untagged ? `<p class="card-foot">${untagged} stock/ETF holding${untagged === 1 ? " is" : "s are"} not tagged to a broker yet.</p>` : ""}
+    </section>`;
+}
+
+function incomeCard() {
+  const inc = state.income;
+  if (!inc) {
+    return `<section class="card card-pad span-7"><div class="skeleton" style="height:220px"></div></section>`;
+  }
+  const summary = inc.summary;
+  const years = (inc.years || []).map((y) => (typeof y === "object" ? y : { year: y, label: fyLabel(y) }));
+  const rows = summary.by_investment || [];
+  const label = inc.year_label || fyLabel(inc.year);
+  return `
+    <section class="card card-pad span-7 income-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Income earned</div>
+          <div class="card-sub">Dividend, interest, rent and other income by investment</div>
+        </div>
+        <div class="card-head-tools">
+          <select class="select-compact" data-income-year aria-label="Income year">
+            ${years.map((y) => `<option value="${y.year}" ${y.year === inc.year ? "selected" : ""}>${esc(y.label)}</option>`).join("")}
+          </select>
+          ${isAdmin() ? `<button class="btn btn-secondary btn-sm" type="button" data-action="record-income">${icon("plus")} Record</button>` : ""}
+        </div>
+      </div>
+      <div class="income-strip">
+        <div><span>Credited</span><strong>${compactMoney(summary.credited)}</strong></div>
+        <div><span>Pending credit</span><strong>${compactMoney(summary.pending)}</strong></div>
+        <div><span>Entries</span><strong>${summary.count}</strong></div>
+      </div>
+      <div class="kind-chips">
+        ${(summary.by_kind || []).map((kind) => `
+          <span class="kind-chip">
+            <i style="background:${safeColor(kind.color)}"></i>
+            ${esc(kind.label)}
+            <strong>${compactMoney(kind.amount)}</strong>
+          </span>`).join("")}
+      </div>
+      ${rows.length ? `<div class="table-wrap">
+        <table class="mini-table income-table">
+          <thead>
+            <tr><th>Investment</th><th class="num">Dividend</th><th class="num hide-sm">Interest</th><th class="num hide-sm">Rent</th><th class="num hide-sm">Other</th><th class="num">Total</th><th class="num">Pending</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr class="drillable" data-investment-id="${row.investment_id}" title="Open ${esc(row.investment)}">
+                <td>
+                  <div class="cell-name">${esc(row.investment)}</div>
+                  <div class="cell-sub hide-sm">${esc(row.owner)} · ${esc(row.type_label)}</div>
+                </td>
+                <td class="num">${amountCell(row.dividend)}</td>
+                <td class="num hide-sm">${amountCell(row.interest)}</td>
+                <td class="num hide-sm">${amountCell(row.rent)}</td>
+                <td class="num hide-sm">${amountCell(row.other)}</td>
+                <td class="num"><strong>${amountCell(row.total)}</strong></td>
+                <td class="num">${amountCell(row.pending)}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>` : `<div class="empty compact">
+        <div class="empty-icon">${icon("rupee")}</div>
+        <h3>No credited income in ${esc(label)}</h3>
+        <p>Record a dividend, FD interest or rent receipt, or fetch dividends for your shares.</p>
+        ${isAdmin() ? `<div class="actions">
+          <button class="btn btn-secondary btn-sm" type="button" data-action="record-income">${icon("plus")} Record income</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="fetch-corporate">${icon("refresh")} Fetch dividends</button>
+        </div>` : ""}
+      </div>`}
+      ${inc.items.length ? `<details class="income-entries">
+        <summary>${inc.items.length} entr${inc.items.length === 1 ? "y" : "ies"} in ${esc(label)}</summary>
+        <div class="entry-list">
+          ${inc.items.map((item) => `
+            <div class="entry-row drillable" data-investment-id="${item.investment_id}" title="Open ${esc(item.investment)}">
+              <span class="entry-kind" style="background:${safeColor(item.kind_color)}22;color:${safeColor(item.kind_color)}">${esc(item.kind_label)}</span>
+              <div class="entry-main">
+                <span class="entry-name">${esc(item.investment)}</span>
+                <span class="entry-meta">${esc(item.owner)} · ${item.status === "credited" ? `credited ${fmtDate(item.credited_date)}` : `expected ${fmtDate(item.due_date)}`}</span>
+              </div>
+              <span class="entry-amt">${inr2(item.amount)}</span>
+              ${isAdmin() ? `<button class="icon-btn danger" type="button" data-action="delete-income" data-id="${item.id}" title="Delete entry" aria-label="Delete income entry">${icon("trash", "sm")}</button>` : ""}
+            </div>`).join("")}
+        </div>
+      </details>` : ""}
+      <p class="card-foot">Indian financial year, April to March. Pending entries wait for the bank credit.</p>
+    </section>`;
+}
+
+function creditChecklistCard() {
+  if (!state.income) {
+    return `<section class="card card-pad span-5"><div class="skeleton" style="height:220px"></div></section>`;
+  }
+  const items = state.income.checklist || [];
+  return `
+    <section class="card card-pad span-5">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Credit checklist</div>
+          <div class="card-sub">Income expected in a member's bank account</div>
+        </div>
+        <span class="pill ${items.length ? "pill-warn" : "pill-ok"}">${items.length ? `${items.length} pending` : "All clear"}</span>
+      </div>
+      ${items.length ? `<div class="credit-list">
+        ${items.map((item) => {
+          const days = item.days;
+          const dueClass = days !== null && days < 0 ? "overdue" : days !== null && days <= 7 ? "soon" : "";
+          const dueText = days === null ? "No expected date"
+            : days < 0 ? `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`
+            : days === 0 ? "Expected today"
+            : `Expected in ${days} day${days === 1 ? "" : "s"}`;
+          const bank = item.bank || {};
+          return `<div class="credit-row ${dueClass}">
+            <input type="checkbox" data-credit-id="${item.id}" ${isAdmin() ? "" : "disabled"} aria-label="Mark ${esc(item.investment)} ${esc(item.kind_label.toLowerCase())} as received">
+            <div class="credit-main drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
+              <div class="credit-title">${esc(item.investment)} <span class="kind-tag" style="color:${safeColor(item.kind_color)}">${esc(item.kind_label)}</span></div>
+              <div class="credit-sub">${esc(item.owner)} · ${bankLine(item)}</div>
+              <div class="credit-due">${dueText}${item.due_date ? ` · ${fmtDate(item.due_date)}` : ""}</div>
+            </div>
+            <div class="credit-amt">${inr(item.amount)}</div>
+          </div>`;
+        }).join("")}
+      </div>` : `<div class="empty compact">
+        <div class="empty-icon">${icon("checkCircle")}</div>
+        <h3>Nothing awaiting credit</h3>
+        <p>Dividends and interest you apply or record will appear here until the bank credit is confirmed.</p>
+      </div>`}
+      <div class="checklist-foot">
+        <span>${isAdmin() ? "Tick an item once the money reaches the bank." : "Admins can confirm bank credits."}</span>
+        <button class="card-action" type="button" data-nav="members">Bank details ${icon("chevronRight", "sm")}</button>
+      </div>
+    </section>`;
+}
+
+function bankCard() {
+  const members = state.members.slice().sort((a, b) => a.name.localeCompare(b.name));
+  const missing = members.filter((m) => !m.bank_name || !m.account_number).length;
+  return `
+    <section class="card card-pad ${isAdmin() ? "span-7" : "span-12"}">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Member bank details</div>
+          <div class="card-sub">Where dividends, interest and rent should land</div>
+        </div>
+        <span class="pill ${missing ? "pill-warn" : "pill-ok"}">${missing ? `${missing} incomplete` : "All linked"}</span>
+      </div>
+      <div class="table-wrap">
+        <table class="mini-table bank-table">
+          <thead><tr><th>Member</th><th>Bank</th><th class="hide-sm">Account</th><th class="hide-sm">IFSC</th></tr></thead>
+          <tbody>
+            ${members.map((member) => `
+              <tr class="drillable" data-member-open="${member.id}" title="${isAdmin() ? `Edit ${esc(member.name)}'s details` : "Open members"}">
+                <td>
+                  <div class="cell-person">
+                    ${avatar(member.name, "sm")}
+                    <div><div class="cell-name">${esc(member.name)}</div><div class="cell-sub">${member.role === "admin" ? "Admin" : "Viewer"}</div></div>
+                  </div>
+                </td>
+                <td>
+                  <div class="cell-name">${member.bank_name ? esc(member.bank_name) : `<span class="muted">Not added</span>`}</div>
+                  <div class="cell-sub">${esc(member.bank_branch || "")}</div>
+                </td>
+                <td class="mono hide-sm">${member.account_number ? esc(member.account_number) : `<span class="pill pill-warn">Missing</span>`}</td>
+                <td class="mono hide-sm">${member.ifsc ? esc(member.ifsc) : `<span class="muted">—</span>`}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="card-foot">${isAdmin() ? "Update bank details from the Members page." : "Account numbers are masked for other members."}</p>
+    </section>`;
+}
+
+function corporateCard() {
+  const holdings = state.investments.filter((i) => i.type === "stocks" || i.type === "etf");
+  return `
+    <section class="card card-pad span-5 corp-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Dividends &amp; bonus</div>
+          <div class="card-sub">Auto-fetch corporate actions for shares and ETFs</div>
+        </div>
+        <span class="pill pill-muted">${holdings.length} eligible</span>
+      </div>
+      <div class="corp-illustration">
+        <div class="corp-badge">${icon("rupee")}</div>
+        <div>
+          <strong>Dividend cash and bonus shares</strong>
+          <p>NSE is checked first, with Yahoo Finance as a fallback. Dividend credits are added to the checklist; bonus or split actions update the quantity and average cost.</p>
+        </div>
+      </div>
+      <ul class="corp-points">
+        <li>${icon("check", "sm")} Only actions after each holding's start date</li>
+        <li>${icon("check", "sm")} Already-applied actions are skipped</li>
+        <li>${icon("check", "sm")} Review and tick before anything is applied</li>
+      </ul>
+      <div class="corp-controls">
+        <select class="select-compact" id="corp-years" aria-label="Lookback window">
+          <option value="1">Last 1 year</option>
+          <option value="2">Last 2 years</option>
+          <option value="3">Last 3 years</option>
+          <option value="5">Last 5 years</option>
+        </select>
+        <button class="btn btn-primary btn-sm" type="button" data-action="fetch-corporate" ${holdings.length ? "" : "disabled"}>
+          ${icon("refresh")} Fetch actions
+        </button>
+      </div>
+      ${holdings.length ? "" : `<p class="card-foot">Add a stock or ETF with a symbol first.</p>`}
     </section>`;
 }
 
@@ -736,13 +1301,13 @@ function holdingsCard(dash) {
         <button class="card-action" type="button" data-nav="investments">All holdings ${icon("chevronRight", "sm")}</button>
       </div>
       ${rows.length ? `<table class="mini-table">
-        <thead><tr><th>Holding</th><th>Owner</th><th>Value</th></tr></thead>
+        <thead><tr><th>Holding</th><th class="hide-sm">Owner</th><th>Value</th></tr></thead>
         <tbody>
           ${rows.map((h) => `
             <tr data-investment-id="${h.id}">
               <td>
-                <div class="cell-name">${esc(h.name)}</div>
-                <div class="cell-sub">${esc(h.type_label)}</div>
+                <div class="holding-name">${holdingBadge(h)}<strong>${esc(h.name)}</strong></div>
+                <div class="cell-sub">${esc(h.type_label)}${h.broker ? ` · <span class="sub-broker">${brokerBadge(h.broker, "sm")}${esc(h.broker)}</span>` : ""}</div>
               </td>
               <td class="hide-sm" style="font-size:12px;color:var(--muted)">${esc(h.owner)}</td>
               <td class="num">${inr(h.current_value)}<div class="cell-sub" style="color:${h.gain >= 0 ? "var(--ok)" : "var(--bad)"}">${pctText(h.gain_pct)}</div></td>
@@ -752,34 +1317,9 @@ function holdingsCard(dash) {
     </section>`;
 }
 
-function ownersCard(dash) {
-  const total = dash.totals.value || 1;
-  return `
-    <section class="card card-pad span-5">
-      <div class="card-head">
-        <div>
-          <div class="card-title">By member</div>
-          <div class="card-sub">Share of the family portfolio</div>
-        </div>
-        <button class="card-action" type="button" data-nav="members">Members ${icon("chevronRight", "sm")}</button>
-      </div>
-      <div class="owner-list">
-        ${dash.owners.map((owner) => `
-          <div class="owner-row">
-            ${avatar(owner.name, "sm")}
-            <div class="meta">
-              <div class="name">${esc(owner.name)}</div>
-              <div class="sub">${owner.count} holding${owner.count === 1 ? "" : "s"} · ${nf(1).format((owner.value / total) * 100)}%</div>
-            </div>
-            <div class="amt">${compactMoney(owner.value)}<div class="sub">${compactMoney(owner.invested)} in</div></div>
-          </div>`).join("")}
-      </div>
-    </section>`;
-}
-
 function maturitiesCard(dash) {
   return `
-    <section class="card card-pad span-6">
+    <section class="card card-pad span-5">
       <div class="card-head">
         <div>
           <div class="card-title">Upcoming maturities</div>
@@ -790,10 +1330,10 @@ function maturitiesCard(dash) {
       ${dash.maturities.length ? `<div class="maturity-list">
         ${dash.maturities.map((m) => {
           const d = shortDate(m.date);
-          return `<div class="maturity-row">
+          return `<div class="maturity-row drillable" data-investment-id="${m.id}" role="button" tabindex="0" title="Open ${esc(m.name)}">
             <div class="maturity-date"><div class="d">${d.day}</div><div class="m">${d.month}</div></div>
             <div class="maturity-main">
-              <div class="name">${esc(m.name)}</div>
+              <div class="name">${issuerBadge({ issuer: m.issuer, type: m.type_key, name: m.name }, "sm")}<span>${esc(m.name)}</span></div>
               <div class="sub">${esc(m.type)} · ${esc(m.owner)}</div>
             </div>
             <div class="maturity-val">${compactMoney(m.value)}<div class="sub">${m.days === 0 ? "today" : `in ${m.days} days`}</div></div>
@@ -804,9 +1344,9 @@ function maturitiesCard(dash) {
 }
 
 function activityCard(dash) {
-  const iconFor = { created: "plus", updated: "edit", deleted: "trash", imported: "upload" };
+  const iconFor = { created: "plus", updated: "edit", deleted: "trash", imported: "upload", apply: "refresh" };
   return `
-    <section class="card card-pad span-6">
+    <section class="card card-pad span-12">
       <div class="card-head">
         <div>
           <div class="card-title">Recent activity</div>
@@ -824,6 +1364,283 @@ function activityCard(dash) {
           </div>`).join("")}
       </div>` : `<p class="muted" style="font-size:13px;padding:8px 0">Actions will show up here as the family updates the portfolio.</p>`}
     </section>`;
+}
+
+/* ============================================================
+   Income + corporate actions
+   ============================================================ */
+
+function openIncomeModal(preselectId = null) {
+  if (!isAdmin()) return;
+  const investments = state.investments.slice().sort((a, b) => a.name.localeCompare(b.name));
+  if (!investments.length) {
+    toast("Add an investment before recording income", "warn");
+    return;
+  }
+  const selectedId = investments.some((item) => item.id === Number(preselectId))
+    ? Number(preselectId)
+    : investments[0].id;
+  const kinds = state.meta?.income_kinds || [{ key: "dividend", label: "Dividend" }];
+  const today = todayIso();
+
+  openModal({
+    title: "Record income",
+    subtitle: "Add a dividend, interest, rent or other receipt to the shared ledger.",
+    size: "modal-md",
+    body: `
+      <form id="income-form" novalidate>
+        <label class="field">
+          <span>Investment</span>
+          <select name="investment_id">
+            ${investments.map((item) => `
+              <option value="${item.id}" ${item.id === selectedId ? "selected" : ""}>
+                ${esc(item.name)} · ${esc(item.owner)}${item.type !== "real_estate" && item.details?.symbol ? ` (${esc(item.details.symbol)})` : ""}
+              </option>`).join("")}
+          </select>
+        </label>
+        <div class="grid-2">
+          <label class="field">
+            <span>Income type</span>
+            <select name="kind">
+              ${kinds.map((kind) => `<option value="${esc(kind.key)}">${esc(kind.label)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field">
+            <span>Amount<span class="req">*</span></span>
+            <input type="number" name="amount" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00">
+          </label>
+        </div>
+        <div class="grid-2">
+          <label class="field">
+            <span>Status</span>
+            <select name="status">
+              <option value="credited">Received in bank</option>
+              <option value="pending">Expected, not yet credited</option>
+            </select>
+          </label>
+          <label class="field" data-credited-field>
+            <span>Credited on</span>
+            <input type="date" name="credited_date" value="${today}">
+          </label>
+          <label class="field hidden" data-pending-field>
+            <span>Expected credit date</span>
+            <input type="date" name="due_date" value="${today}">
+          </label>
+        </div>
+        <label class="field">
+          <span>Notes</span>
+          <textarea name="notes" maxlength="500" placeholder="e.g. Q2 dividend, FD interest for Apr-Jun"></textarea>
+        </label>
+        <div class="form-error hidden" data-income-error role="alert"></div>
+      </form>`,
+    footer: `
+      <button class="btn btn-secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="button" data-save-income>Save income</button>`,
+    onMount(backdrop, close) {
+      const form = backdrop.querySelector("#income-form");
+      const status = form.elements.status;
+      const errorBox = backdrop.querySelector("[data-income-error]");
+      const creditedField = backdrop.querySelector("[data-credited-field]");
+      const pendingField = backdrop.querySelector("[data-pending-field]");
+      const saveButton = backdrop.querySelector("[data-save-income]");
+      const syncDates = () => {
+        const credited = status.value === "credited";
+        creditedField.classList.toggle("hidden", !credited);
+        pendingField.classList.toggle("hidden", credited);
+      };
+      status.addEventListener("change", syncDates);
+      syncDates();
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        saveButton.click();
+      });
+      saveButton.addEventListener("click", async () => {
+        errorBox.classList.add("hidden");
+        const payload = {
+          investment_id: Number(form.elements.investment_id.value),
+          kind: form.elements.kind.value,
+          amount: form.elements.amount.value,
+          status: status.value,
+          credited_date: status.value === "credited" ? form.elements.credited_date.value : "",
+          due_date: status.value === "pending" ? form.elements.due_date.value : "",
+          notes: form.elements.notes.value,
+        };
+        saveButton.disabled = true;
+        saveButton.innerHTML = `<span class="spinner"></span> Saving…`;
+        try {
+          await api("/incomes", { method: "POST", body: payload });
+          close();
+          toast("Income entry saved", "ok");
+          await refreshDashboard();
+        } catch (error) {
+          const errors = error.data?.errors;
+          errorBox.textContent = errors ? Object.values(errors).join(" · ") : error.message;
+          errorBox.classList.remove("hidden");
+          saveButton.disabled = false;
+          saveButton.textContent = "Save income";
+        }
+      });
+    },
+  });
+}
+
+async function markIncomeCredited(id) {
+  try {
+    const data = await api(`/incomes/${id}/status`, { method: "POST", body: { status: "credited" } });
+    toast(`${inr2(data.income.amount)} marked as received`, "ok");
+    await refreshDashboard();
+  } catch (error) {
+    toast(error.message, "error");
+    await refreshDashboard();
+  }
+}
+
+async function deleteIncomeEntry(id) {
+  const item = (state.income?.items || []).find((row) => row.id === id);
+  const ok = await confirmDialog({
+    title: "Delete this income entry?",
+    message: item
+      ? `Removes the ${esc(item.kind_label.toLowerCase())} entry of ${inr2(item.amount)} for ${esc(item.investment)}. The holding itself is not changed.`
+      : "This income entry will be removed. The holding itself is not changed.",
+  });
+  if (!ok) return;
+  try {
+    await api(`/incomes/${id}`, { method: "DELETE" });
+    toast("Income entry deleted", "ok");
+    await refreshDashboard();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function loadIncomeYear(year) {
+  const select = $("[data-income-year]");
+  if (select) select.disabled = true;
+  try {
+    const data = await api(`/incomes?year=${encodeURIComponent(year)}`);
+    state.income = data.income;
+    if (state.view === "dashboard") renderDashboard();
+  } catch (error) {
+    toast(error.message, "error");
+    if (select) select.disabled = false;
+  }
+}
+
+async function fetchCorporateActions() {
+  if (!isAdmin()) return;
+  const years = Number($("#corp-years")?.value || 1);
+  const button = $('[data-action="fetch-corporate"]');
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = `<span class="spinner"></span> Checking NSE…`;
+  }
+  try {
+    const data = await api(`/corporate-actions?years=${years}`);
+    state.corporate = data.result;
+    if (!data.result.items.length) {
+      toast(data.result.message || "No new dividend or bonus actions found", "warn");
+      (data.result.errors || []).slice(0, 1).forEach((message) => toast(message, "warn"));
+      return;
+    }
+    openCorporateModal(data.result);
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    if (button && document.body.contains(button)) {
+      button.disabled = false;
+      button.innerHTML = `${icon("refresh")} Fetch actions`;
+    }
+  }
+}
+
+function openCorporateModal(result) {
+  const items = result.items || [];
+  const range = result.window || {};
+  const warnings = result.errors || [];
+  openModal({
+    title: "Review corporate actions",
+    subtitle: `${items.length} action${items.length === 1 ? "" : "s"} found between ${fmtDate(range.from)} and ${fmtDate(range.to)}.`,
+    body: `
+      <div class="corp-summary">
+        <div><span>Dividend credits</span><strong>${result.dividend_count} · ${inr2(result.dividend_amount)}</strong></div>
+        <div><span>Bonus / splits</span><strong>${result.bonus_count}</strong></div>
+        <div><span>Lookback</span><strong>${range.years || 1} year${Number(range.years) === 1 ? "" : "s"}</strong></div>
+      </div>
+      ${warnings.length ? `<div class="info-strip warn" style="margin-bottom:12px">${icon("alert", "sm")}<span>${warnings.map(esc).join(" · ")}</span></div>` : ""}
+      <div class="corp-list-head">
+        <label class="check-inline"><input type="checkbox" data-corp-all checked> Select all</label>
+        <span class="muted">Dividends go to the checklist. Bonus and split actions change quantity immediately.</span>
+      </div>
+      <div class="table-wrap corp-pick-wrap">
+        <table class="mini-table corp-table">
+          <thead><tr><th></th><th>Holding</th><th>Action</th><th>Ex-date</th><th class="num">Effect</th><th>Source</th></tr></thead>
+          <tbody>
+            ${items.map((item, index) => `
+              <tr>
+                <td><input type="checkbox" data-corp-pick="${index}" checked aria-label="Apply ${esc(item.label)} for ${esc(item.investment)}"></td>
+                <td>
+                  <div class="cell-name">${esc(item.investment)}</div>
+                  <div class="cell-sub">${esc(item.owner)} · ${nf(2).format(item.quantity)} ${item.type === "etf" ? "units" : "shares"} · ${esc(item.symbol)}</div>
+                </td>
+                <td>
+                  <span class="pill ${item.kind === "dividend" ? "pill-ok" : "pill-warn"}">${esc(item.label)}</span>
+                  <div class="cell-sub">${esc(item.detail)}</div>
+                </td>
+                <td>${fmtDate(item.ex_date)}</td>
+                <td class="num">${item.kind === "dividend"
+                  ? `${inr2(item.effect)}<div class="cell-sub">cash credit</div>`
+                  : `${nf(2).format(item.quantity)} → ${nf(2).format(item.new_quantity)}<div class="cell-sub">new quantity</div>`}</td>
+                <td><span class="pill pill-muted">${esc(item.source)}</span></td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="info-strip" style="margin-top:12px">${icon("info", "sm")}<span>Bonus shares already reflected in your brokerage holdings should be left unticked. Dividends stay pending until you confirm the bank credit.</span></div>`,
+    footer: `
+      <button class="btn btn-secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="button" data-apply-corp>Apply selected</button>`,
+    onMount(backdrop, close) {
+      const applyButton = backdrop.querySelector("[data-apply-corp]");
+      const selectAll = backdrop.querySelector("[data-corp-all]");
+      const picks = () => $$("[data-corp-pick]", backdrop);
+      const chosen = () => picks().filter((box) => box.checked);
+      const sync = () => {
+        const count = chosen().length;
+        applyButton.disabled = count === 0;
+        applyButton.textContent = count ? `Apply ${count} action${count === 1 ? "" : "s"}` : "Apply selected";
+        selectAll.checked = count === picks().length;
+        selectAll.indeterminate = count > 0 && count < picks().length;
+      };
+      selectAll.addEventListener("change", () => {
+        picks().forEach((box) => { box.checked = selectAll.checked; });
+        sync();
+      });
+      picks().forEach((box) => box.addEventListener("change", sync));
+      sync();
+
+      applyButton.addEventListener("click", async () => {
+        const selected = chosen().map((box) => items[Number(box.dataset.corpPick)]);
+        if (!selected.length) return;
+        applyButton.disabled = true;
+        applyButton.innerHTML = `<span class="spinner"></span> Applying…`;
+        try {
+          const data = await api("/corporate-actions/apply", { method: "POST", body: { items: selected } });
+          const result = data.result;
+          const parts = [];
+          if (result.dividends) parts.push(`${result.dividends} dividend${result.dividends === 1 ? "" : "s"} (${inr2(result.dividend_amount)})`);
+          if (result.bonuses) parts.push(`${result.bonuses} bonus/split${result.bonuses === 1 ? "" : "s"}`);
+          close();
+          toast(parts.length ? `Applied ${parts.join(" and ")}` : "Nothing new to apply", parts.length ? "ok" : "warn");
+          await refreshDashboard();
+        } catch (error) {
+          toast(error.message, "error");
+          applyButton.disabled = false;
+          applyButton.textContent = "Apply selected";
+        }
+      });
+    },
+  });
 }
 
 /* ============================================================
@@ -886,7 +1703,7 @@ function renderInvestments() {
     <div class="toolbar">
       <div class="search">
         ${icon("search")}
-        <input id="inv-search" type="search" placeholder="Search by name, owner, folio…" value="${esc(f.q)}" aria-label="Search investments">
+        <input id="inv-search" type="search" placeholder="Search by name, owner, broker…" value="${esc(f.q)}" aria-label="Search investments">
       </div>
       <div class="segmented" role="group" aria-label="Filter by category">
         ${["", "equity", "debt", "other"].map((key) => {
@@ -897,6 +1714,10 @@ function renderInvestments() {
         }).join("")}
       </div>
       <div class="toolbar-right">
+        <div class="segmented" role="group" aria-label="Group holdings">
+          <button class="seg ${state.layout === "flat" ? "active" : ""}" type="button" data-action="layout" data-layout="flat">All holdings</button>
+          <button class="seg ${state.layout === "member" ? "active" : ""}" type="button" data-action="layout" data-layout="member">By member</button>
+        </div>
         <select class="select-compact" id="inv-type" data-filter="type" aria-label="Filter by type">
           <option value="">All types</option>
           ${presentTypes.map((t) => `<option value="${t.key}" ${f.type === t.key ? "selected" : ""}>${esc(t.label)}</option>`).join("")}
@@ -920,7 +1741,7 @@ function renderInvestments() {
 
     ${folioPanelHtml(collectFolios(all))}
 
-    <div class="card table-card">
+    <div class="card table-card inv-table-card">
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -938,6 +1759,7 @@ function renderInvestments() {
           <tbody id="inv-body"></tbody>
         </table>
       </div>
+      <div class="inv-cards" id="inv-cards"></div>
       <div class="table-foot" id="inv-foot"></div>
     </div>
   `;
@@ -963,37 +1785,30 @@ function updateInvestmentsTable() {
         <div class="actions"><button class="btn btn-secondary btn-sm" type="button" data-action="clear-filters">Clear filters</button></div>
       </div>
     </td></tr>`;
+  } else if (state.layout === "member") {
+    const cols = isAdmin() ? 8 : 7;
+    body.innerHTML = investmentsByMember(items).map((group) => groupHtml(group, cols)).join("");
   } else {
-    body.innerHTML = items.map((item) => {
-      const admin = isAdmin();
-      const selected = state.selected.has(item.id);
-      return `
-        <tr data-investment-id="${item.id}" class="${selected ? "selected" : ""}">
-          ${admin ? `<td class="select-cell"><input type="checkbox" data-select-id="${item.id}" ${selected ? "checked" : ""} aria-label="Select ${esc(item.name)}"></td>` : ""}
-          <td class="name-cell">
-            <strong>${esc(item.name)}</strong>
-            <div class="sub"><span class="cat-dot cat-${item.category}"></span>${esc(item.type_label)}</div>
-          </td>
-          <td class="details-cell hide-sm">${detailSummary(item)}</td>
-          <td class="hide-sm">
-            <div style="display:flex;align-items:center;gap:8px">
-              ${avatar(item.owner, "sm")}
-              <span style="font-size:12.5px">${esc(item.owner)}</span>
-            </div>
-          </td>
-          <td class="num">${inr(item.invested_amount)}</td>
-          <td class="num">${inr(item.current_value)}</td>
-          <td class="num">${gainPill(item.gain, item.gain_pct, true)}</td>
-          <td class="actions-cell">
-            ${admin ? `
-              <button class="icon-btn" type="button" data-action="edit-investment" data-id="${item.id}" title="Edit ${esc(item.name)}" aria-label="Edit ${esc(item.name)}">${icon("edit", "sm")}</button>
-              <button class="icon-btn danger" type="button" data-action="delete-investment" data-id="${item.id}" title="Delete ${esc(item.name)}" aria-label="Delete ${esc(item.name)}">${icon("trash", "sm")}</button>
-            ` : `<span class="row-chev">${icon("chevronRight", "sm")}</span>`}
-          </td>
-        </tr>`;
-    }).join("");
+    body.innerHTML = items.map((item) => investmentRowHtml(item)).join("");
   }
   hydrateIcons(body);
+
+  const cards = $("#inv-cards");
+  if (cards) {
+    if (!items.length) {
+      cards.innerHTML = `
+        <div class="empty" style="padding:36px 12px">
+          <h3>No holdings match</h3>
+          <p>Try a different search or clear the filters.</p>
+          <div class="actions"><button class="btn btn-secondary btn-sm" type="button" data-action="clear-filters">Clear filters</button></div>
+        </div>`;
+    } else if (state.layout === "member") {
+      cards.innerHTML = investmentsByMember(items).map(investmentCardGroupHtml).join("");
+    } else {
+      cards.innerHTML = items.map(investmentCardHtml).join("");
+    }
+    hydrateIcons(cards);
+  }
   syncSelectionBar(items);
 
   const invested = items.reduce((s, i) => s + i.invested_amount, 0);
@@ -1004,6 +1819,135 @@ function updateInvestmentsTable() {
     <span>Invested <strong>${inr(invested)}</strong> · Value <strong>${inr(current)}</strong> · Gain
       <strong style="color:${gain >= 0 ? "var(--ok)" : "var(--bad)"}">${gain >= 0 ? "+" : "−"}${inr(Math.abs(gain))}</strong>
     </span>`;
+}
+
+function investmentRowHtml(item) {
+  const admin = isAdmin();
+  const selected = state.selected.has(item.id);
+  return `
+    <tr data-investment-id="${item.id}" class="${selected ? "selected" : ""}">
+      ${admin ? `<td class="select-cell"><input type="checkbox" data-select-id="${item.id}" ${selected ? "checked" : ""} aria-label="Select ${esc(item.name)}"></td>` : ""}
+      <td class="name-cell">
+        <div class="holding-name">${holdingBadge(item)}<strong>${esc(item.name)}</strong></div>
+        <div class="sub"><span class="cat-dot cat-${item.category}"></span>${esc(item.type_label)}${item.broker ? ` · <span class="sub-broker">${brokerBadge(item.broker, "sm")}${esc(item.broker)}</span>` : ""}</div>
+      </td>
+      <td class="details-cell hide-sm">${detailSummary(item)}</td>
+      <td class="hide-sm">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${avatar(item.owner, "sm")}
+          <span style="font-size:12.5px">${esc(item.owner)}</span>
+        </div>
+      </td>
+      <td class="num">${inr(item.invested_amount)}</td>
+      <td class="num">${inr(item.current_value)}</td>
+      <td class="num">${gainPill(item.gain, item.gain_pct, true)}</td>
+      <td class="actions-cell">
+        ${admin ? `
+          <button class="icon-btn" type="button" data-action="edit-investment" data-id="${item.id}" title="Edit ${esc(item.name)}" aria-label="Edit ${esc(item.name)}">${icon("edit", "sm")}</button>
+          <button class="icon-btn danger" type="button" data-action="delete-investment" data-id="${item.id}" title="Delete ${esc(item.name)}" aria-label="Delete ${esc(item.name)}">${icon("trash", "sm")}</button>
+        ` : `<span class="row-chev">${icon("chevronRight", "sm")}</span>`}
+      </td>
+    </tr>`;
+}
+
+function investmentCardHtml(item) {
+  const positive = item.gain >= 0;
+  return `
+    <article class="inv-card" data-investment-id="${item.id}" role="button" tabindex="0" aria-label="Open ${esc(item.name)}">
+      <div class="inv-card-top">
+        <div class="inv-card-name">
+          <span class="inv-card-title">${issuerBadge(item)}<strong>${esc(item.name)}</strong></span>
+          <span class="inv-card-type"><span class="cat-dot cat-${item.category}"></span>${esc(item.type_label)}</span>
+        </div>
+        <div class="inv-card-value">
+          <strong>${inr(item.current_value)}</strong>
+          <span class="pill ${positive ? "pill-ok" : "pill-bad"}">${pctText(item.gain_pct)}</span>
+        </div>
+      </div>
+      <div class="inv-card-meta">
+        <span class="inv-card-owner">${avatar(item.owner, "sm")}${esc(item.owner)}</span>
+        ${item.broker ? `<span class="inv-broker">${brokerBadge(item.broker)}${esc(item.broker)}</span>` : ""}
+        <span>Invested ${inr(item.invested_amount)}</span>
+        <span style="color:${positive ? "var(--ok)" : "var(--bad)"};font-weight:650">${positive ? "+" : "−"}${inr(Math.abs(item.gain))}</span>
+      </div>
+    </article>`;
+}
+
+function investmentCardGroupHtml(group) {
+  const invested = group.items.reduce((sum, item) => sum + (Number(item.invested_amount) || 0), 0);
+  const value = group.items.reduce((sum, item) => sum + (Number(item.current_value) || 0), 0);
+  const gain = value - invested;
+  return `
+    <section class="inv-group">
+      <header class="inv-group-head group-head">
+        <div class="cell-person">
+          ${avatar(group.member.name, "sm")}
+          <div>
+            <div class="cell-name">${esc(group.member.name)}</div>
+            <div class="cell-sub">${group.items.length} holding${group.items.length === 1 ? "" : "s"}</div>
+          </div>
+        </div>
+        <div class="group-figures">
+          <span>Invested <strong>${compactMoney(invested)}</strong></span>
+          <span>Value <strong>${compactMoney(value)}</strong></span>
+          <span style="color:${gain >= 0 ? "var(--ok)" : "var(--bad)"}">${gain >= 0 ? "+" : "−"}${compactMoney(Math.abs(gain))}</span>
+        </div>
+      </header>
+      ${group.items.length
+        ? group.items.map(investmentCardHtml).join("")
+        : `<p class="muted inv-group-empty">No holdings match for this member.</p>`}
+    </section>`;
+}
+
+function investmentsByMember(items) {
+  const ownerFilter = state.filters.owner ? String(state.filters.owner) : "";
+  const buckets = new Map();
+  state.members.forEach((member) => {
+    if (!member) return;
+    const id = String(member.id);
+    if (ownerFilter && id !== ownerFilter) return;
+    buckets.set(id, { member, items: [] });
+  });
+  items.forEach((item) => {
+    const id = String(item.owner_id);
+    if (!buckets.has(id)) {
+      buckets.set(id, { member: { id: item.owner_id, name: item.owner }, items: [] });
+    }
+    buckets.get(id).items.push(item);
+  });
+  const valueOf = (group) => group.items.reduce((sum, item) => sum + (Number(item.current_value) || 0), 0);
+  const groups = [...buckets.values()].filter((group) => group.items.length || ownerFilter);
+  return groups.sort(
+    (a, b) => valueOf(b) - valueOf(a) || String(a.member.name).localeCompare(String(b.member.name)),
+  );
+}
+
+function groupHtml(group, cols) {
+  const invested = group.items.reduce((sum, item) => sum + (Number(item.invested_amount) || 0), 0);
+  const value = group.items.reduce((sum, item) => sum + (Number(item.current_value) || 0), 0);
+  const gain = value - invested;
+  return `
+    <tr class="group-row">
+      <td colspan="${cols}">
+        <div class="group-head">
+          <div class="cell-person">
+            ${avatar(group.member.name, "sm")}
+            <div>
+              <div class="cell-name">${esc(group.member.name)}</div>
+              <div class="cell-sub">${group.items.length} holding${group.items.length === 1 ? "" : "s"}</div>
+            </div>
+          </div>
+          <div class="group-figures">
+            <span>Invested <strong>${compactMoney(invested)}</strong></span>
+            <span>Value <strong>${compactMoney(value)}</strong></span>
+            <span style="color:${gain >= 0 ? "var(--ok)" : "var(--bad)"}">${gain >= 0 ? "+" : "−"}${compactMoney(Math.abs(gain))}</span>
+          </div>
+        </div>
+      </td>
+    </tr>
+    ${group.items.length
+      ? group.items.map((item) => investmentRowHtml(item)).join("")
+      : `<tr class="group-empty"><td colspan="${cols}"><span class="muted">No holdings match for this member.</span></td></tr>`}`;
 }
 
 function syncSelectionBar(items) {
@@ -1030,6 +1974,7 @@ function syncSelectionBar(items) {
   bar.innerHTML = `
     <span class="bulk-count"><strong>${state.selected.size}</strong> holding${state.selected.size === 1 ? "" : "s"} selected</span>
     <button class="btn btn-ghost btn-sm" type="button" data-action="clear-selection">Clear</button>
+    <button class="btn btn-secondary btn-sm" type="button" data-action="bulk-broker">${icon("building")} Set broker</button>
     <button class="btn btn-danger btn-sm" type="button" data-action="bulk-delete">${icon("trash")} Delete selected</button>`;
   hydrateIcons(bar);
 }
@@ -1124,6 +2069,7 @@ function openFolioDrawer(key) {
       </tr>`).join("");
   openDrawer(`
     <div class="drawer-head">
+      <div class="dh-logo">${issuerBadgeFromName(folio.company || "", "xl")}</div>
       <div class="dh-main">
         <h3>Customer ID ${esc(folio.customerId)}</h3>
         <div class="dh-sub"><span class="chip">${esc(folio.company || "—")}</span><span>${folio.items.length} deposit${folio.items.length === 1 ? "" : "s"}</span></div>
@@ -1156,6 +2102,32 @@ function openFolioDrawer(key) {
    Investment drawer
    ============================================================ */
 
+function investmentIncomeHtml(item) {
+  const inc = state.income;
+  if (!inc) return "";
+  const items = (inc.items || []).filter((row) => row.investment_id === item.id);
+  const credited = items.filter((row) => row.status === "credited").reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const pending = items.filter((row) => row.status === "pending");
+  const label = inc.year_label || fyLabel(inc.year);
+  return `
+    <div class="section-label">Income · ${esc(label)}</div>
+    <div class="drawer-income">
+      <div class="drawer-income-stats">
+        <div><span>Credited</span><strong>${inr2(credited)}</strong></div>
+        <div><span>Pending</span><strong>${inr2(pending.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</strong></div>
+      </div>
+      ${items.length ? `<div class="drawer-income-list">
+        ${items.slice(0, 6).map((row) => `
+          <div class="drawer-income-row">
+            <span class="entry-kind" style="background:${safeColor(row.kind_color)}22;color:${safeColor(row.kind_color)}">${esc(row.kind_label)}</span>
+            <span class="dim">${row.status === "credited" ? `credited ${fmtDate(row.credited_date)}` : `expected ${fmtDate(row.due_date)}`}</span>
+            <strong>${inr2(row.amount)}</strong>
+          </div>`).join("")}
+      </div>` : `<p class="muted small">No income recorded for this holding yet.</p>`}
+      ${isAdmin() ? `<button class="btn btn-secondary btn-block" type="button" data-action="record-income" data-id="${item.id}" style="margin-top:10px">${icon("plus")} Record income</button>` : ""}
+    </div>`;
+}
+
 function openInvestmentDrawer(id) {
   const item = state.investments.find((i) => i.id === id);
   if (!item) return;
@@ -1175,9 +2147,11 @@ function openInvestmentDrawer(id) {
 
   openDrawer(`
     <div class="drawer-head">
+      <div class="dh-logo">${issuerBadge(item, "xl")}</div>
       <div class="dh-main">
         <h3>${esc(item.name)}</h3>
-        <div class="dh-sub"><span class="chip"><span class="cat-dot cat-${item.category}"></span>${esc(item.type_label)}</span>
+        <div class="dh-sub"><span class="chip">${typeBadge(item, "sm")}${esc(item.type_label)}</span>
+        ${item.broker ? `<span class="dh-broker">${brokerBadge(item.broker)}${esc(item.broker)}</span>` : ""}
         <span>${esc(item.owner)}</span></div>
       </div>
       <button class="icon-btn" type="button" data-drawer-close aria-label="Close">${icon("close")}</button>
@@ -1200,6 +2174,7 @@ function openInvestmentDrawer(id) {
         <div class="dl-item"><div class="k">Record ID</div><div class="v mono">${esc(item.public_id || "—")}</div></div>
         <div class="dl-item wide"><div class="k">Last updated</div><div class="v">${timeAgo(item.updated_at)}</div></div>
       </div>
+      ${investmentIncomeHtml(item)}
       ${folio && folio.items.length > 1 ? `
         <button class="btn btn-secondary btn-block" type="button" data-action="open-folio" data-folio="${esc(folio.key)}" style="margin-top:14px">
           View all ${folio.items.length} deposits under ${esc(folio.customerId)}
@@ -1333,9 +2308,11 @@ function investmentFormHtml(meta, existing) {
   const valueField = field("current_value");
 
   const members = state.members;
-  const selectedOwner = String(existing?.owner_id || state.me?.id || members[0]?.id || "");
-  const ownerOptions = members.map((m) => `<option value="${m.id}" ${selectedOwner === String(m.id) ? "selected" : ""}>${esc(m.name)}</option>`).join("");
-  const ownerId = existing?.owner_id || state.me?.id || members[0]?.id || "";
+  const ownerId = existing?.owner_id || "";
+  const ownerOptions = [
+    `<option value="" ${ownerId ? "" : "selected"}>Select member…</option>`,
+    ...members.map((m) => `<option value="${m.id}" ${String(ownerId) === String(m.id) ? "selected" : ""}>${esc(m.name)}</option>`),
+  ].join("");
 
   const singleSource = meta.derive?.invested?.fields?.length === 1;
   const sourceLabel = singleSource
@@ -1395,7 +2372,7 @@ function investmentFormHtml(meta, existing) {
       <div class="form-section">
         <div class="form-section-head"><h4>${esc(meta.label)} details</h4><p>Fields marked * are required.</p></div>
         <div class="grid-2">
-          ${meta.fields.map((f) => renderFormField(f, details[f.key], ownerId) + (inlineName === f.key ? nameInputHtml : "")).join("")}
+          ${meta.fields.map((f) => renderFormField(f, details[f.key]) + (inlineName === f.key ? nameInputHtml : "")).join("")}
         </div>
       </div>
 
@@ -1427,16 +2404,17 @@ function investmentFormHtml(meta, existing) {
     </form>`;
 }
 
-function dematOptionHtml(ownerId, selected) {
-  const accounts = (state.meta?.demat_accounts || []).filter(
-    (a) => !ownerId || String(a.owner_id) === String(ownerId)
-  );
+function dematOptionHtml(selected) {
+  const accounts = state.meta?.demat_accounts || [];
   if (!accounts.length) return `<option value="">No demat account saved under Masters yet</option>`;
-  const options = accounts.map((a) => `<option value="${a.id}" ${String(a.id) === String(selected) ? "selected" : ""}>${esc(a.display)}</option>`);
+  const options = accounts.map((a) => {
+    const label = a.owner ? `${a.owner} · ${a.display}` : a.display;
+    return `<option value="${a.id}" ${String(a.id) === String(selected) ? "selected" : ""}>${esc(label)}</option>`;
+  });
   return `<option value="">Select…</option>${options.join("")}`;
 }
 
-function renderFormField(field, value, ownerId) {
+function renderFormField(field, value) {
   const id = `f-${field.key}`;
   const required = field.required && !field.auto ? '<span class="req">*</span>' : "";
   const help = field.auto
@@ -1457,7 +2435,7 @@ function renderFormField(field, value, ownerId) {
     if (field.auto) {
       control = `<input type="text" name="${field.key}" id="${id}" value="${esc(value || "")}" placeholder="Auto" readonly>`;
     } else if (field.options_from === "demat_accounts") {
-      control = `<select name="${field.key}" id="${id}" data-demat-select>${dematOptionHtml(ownerId, value)}</select>`;
+      control = `<select name="${field.key}" id="${id}">${dematOptionHtml(value)}</select>`;
     } else {
       const options = field.options || [];
       const current = value ?? field.default ?? "";
@@ -1771,6 +2749,17 @@ function wireInvestmentForm(form, meta, existing) {
     if (!existing) recalc();
   }
 
+  const dematSelect = form.querySelector('[name="demat_id"]');
+  const brokerSelect = form.querySelector('[name="broker"]');
+  if (dematSelect && brokerSelect) {
+    dematSelect.addEventListener("change", () => {
+      const account = (state.meta?.demat_accounts || []).find(
+        (a) => String(a.id) === String(dematSelect.value),
+      );
+      if (account?.broker) brokerSelect.value = account.broker;
+    });
+  }
+
   if (meta.key === "ppf") {
     const startEl = form.querySelector('[name="start_date"]');
     const yearlyEl = form.querySelector('[name="yearly_contribution"]');
@@ -1845,13 +2834,6 @@ function wireInvestmentForm(form, meta, existing) {
   });
 
   wireMaturityPreview(form, meta);
-  const ownerSelect = form.querySelector('[name="owner_id"]');
-  const dematSelect = form.querySelector("[data-demat-select]");
-  if (ownerSelect && dematSelect) {
-    ownerSelect.addEventListener("change", () => {
-      dematSelect.innerHTML = dematOptionHtml(ownerSelect.value, dematSelect.value);
-    });
-  }
   if (form.querySelector('[name="symbol"]')) wireScripLookup(form, meta);
   if (meta.key === "mutual_funds") wireSchemeLookup(form);
   if (meta.key === "etf") wireEtfNameLookup(form);
@@ -2273,6 +3255,54 @@ async function bulkDeleteInvestments() {
   }
 }
 
+function openBrokerBulkModal() {
+  if (!isAdmin() || !state.selected.size) return;
+  const ids = [...state.selected];
+  const brokers = state.meta?.brokers || [];
+  openModal({
+    title: "Tag broker",
+    subtitle: `${ids.length} selected holding${ids.length === 1 ? "" : "s"}. Only stocks and ETFs are changed.`,
+    body: `
+      <form id="bulk-broker-form" novalidate>
+        <label class="field"><span>Broker / DP<span class="req">*</span></span>
+          <select name="broker">
+            <option value="">Select…</option>
+            ${brokers.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("")}
+          </select>
+          <span class="help">Value and gain through this broker will appear on the dashboard.</span>
+          <span class="err" data-err="broker"></span></label>
+      </form>`,
+    footer: `
+      <button class="btn btn-secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="button" data-save>${icon("check")} Tag broker</button>`,
+    onMount(backdrop, close) {
+      const form = backdrop.querySelector("#bulk-broker-form");
+      const button = backdrop.querySelector("[data-save]");
+      button.addEventListener("click", async () => {
+        const broker = form.broker.value;
+        if (!broker) {
+          form.querySelector('[data-err="broker"]').textContent = "Choose a broker";
+          return;
+        }
+        button.disabled = true;
+        button.innerHTML = `<span class="spinner"></span> Tagging…`;
+        try {
+          const result = await api("/investments/bulk-broker", { method: "POST", body: { ids, broker } });
+          state.selected.clear();
+          close();
+          if (result.updated) toast(`Tagged ${result.updated} holding${result.updated === 1 ? "" : "s"} to ${broker}`, "ok");
+          else toast("Only stocks and ETFs can carry a broker", "warn");
+          await refreshAndRender();
+        } catch (error) {
+          toast(error.message, "error");
+          button.disabled = false;
+          button.innerHTML = `${icon("check")} Tag broker`;
+        }
+      });
+    },
+  });
+}
+
 /* ============================================================
    Members
    ============================================================ */
@@ -2677,7 +3707,7 @@ function renderMasters() {
     <div class="page-head">
       <div>
         <h2>Masters</h2>
-        <p>Broker and demat accounts you own. Pick one by name while adding a stock or ETF.</p>
+        <p>Broker and demat accounts saved for the family. Any of them can be picked while adding a stock or ETF.</p>
       </div>
       <div class="page-actions">
         ${admin ? `<button class="btn btn-primary btn-sm" type="button" data-action="add-demat">${icon("plus")} Add demat account</button>` : ""}
@@ -2694,15 +3724,15 @@ function renderMasters() {
         <div class="table-wrap">
           <table class="table">
             <thead><tr>
-              <th>Demat account</th><th>Owner</th><th>Broker / DP</th><th>Client ID</th>
+              <th>Demat account</th><th class="hide-sm">Owner</th><th class="hide-sm">Broker / DP</th><th class="hide-sm">Client ID</th>
               <th class="num">Holdings</th>${admin ? "<th></th>" : ""}
             </tr></thead>
             <tbody>
               ${accounts.map((a) => `<tr>
                 <td><div style="font-weight:650;font-size:12.5px">${esc(a.label || a.broker)}</div><div class="cell-sub">${esc(a.display)}</div></td>
-                <td style="font-size:12px;color:var(--muted)">${esc(a.owner || "—")}</td>
-                <td style="font-size:12px;color:var(--muted)">${esc(a.broker)}</td>
-                <td style="font-size:12px;color:var(--muted)">${esc(a.client_id)}</td>
+                <td class="hide-sm" style="font-size:12px;color:var(--muted)">${esc(a.owner || "—")}</td>
+                <td class="hide-sm" style="font-size:12px;color:var(--muted)">${esc(a.broker)}</td>
+                <td class="hide-sm" style="font-size:12px;color:var(--muted)">${esc(a.client_id)}</td>
                 <td class="num">${a.holding_count}</td>
                 ${admin ? `<td class="num">
                   <button class="icon-btn" type="button" data-action="edit-demat" data-id="${a.id}" aria-label="Edit ${esc(a.display)}">${icon("edit")}</button>
@@ -2736,7 +3766,8 @@ function openDematModal(id = null) {
         <div class="grid-2">
           <label class="field"><span>Member<span class="req">*</span></span>
             <select name="owner_id">
-              ${members.map((m) => `<option value="${m.id}" ${String(existing?.owner_id ?? state.me?.id) === String(m.id) ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
+              <option value="" ${existing?.owner_id ? "" : "selected"}>Select member…</option>
+              ${members.map((m) => `<option value="${m.id}" ${String(existing?.owner_id ?? "") === String(m.id) ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
             </select>
             <span class="err" data-err="owner_id"></span></label>
           <label class="field"><span>Broker / DP<span class="req">*</span></span>
@@ -3123,6 +4154,13 @@ function storageCardHtml() {
   </div>`;
 }
 
+function importOwnerOptions() {
+  return [
+    `<option value="" selected>Select member…</option>`,
+    ...state.members.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`),
+  ].join("");
+}
+
 function renderImport() {
   if (!isAdmin()) {
     $("#view").innerHTML = `<div class="card card-pad"><div class="empty">
@@ -3146,7 +4184,7 @@ function renderImport() {
     ${state.importResult ? `
       <div class="import-result" style="margin-bottom:18px">
         ${icon("checkCircle")}
-        <span>Imported ${state.importResult.imported} holding${state.importResult.imported === 1 ? "" : "s"}${state.importResult.duplicates ? ` · ${state.importResult.duplicates} already there` : ""}${state.importResult.skipped ? ` · ${state.importResult.skipped} skipped` : ""}.</span>
+        <span>Imported ${state.importResult.imported} holding${state.importResult.imported === 1 ? "" : "s"}${state.importResult.updated ? ` · ${state.importResult.updated} updated` : ""}${state.importResult.duplicates ? ` · ${state.importResult.duplicates} already there` : ""}${state.importResult.skipped ? ` · ${state.importResult.skipped} skipped` : ""}.</span>
         <span style="margin-left:auto"><button class="btn btn-ghost btn-sm" type="button" data-action="dismiss-import-result">Dismiss</button></span>
       </div>` : ""}
 
@@ -3174,7 +4212,7 @@ function renderImport() {
             <h4>Fill it in</h4>
             <p>Add one row per holding. Required columns are marked with *. Amounts auto-calculate from units and price when left blank.</p>
             <div class="info-strip" style="margin-top:12px">${icon("info")}
-              <span>Pick a member from the <strong>Owner</strong> dropdown to split the portfolio, or leave it blank to assign holdings to yourself. Deposit tabs name themselves from the bank or scheme and reference number.</span>
+              <span>Pick the member in each row's <strong>Owner</strong> column. Rows left without an owner are held back until you choose one — nothing is ever assigned to whoever uploads the file. Deposit tabs name themselves from the bank or scheme and reference number.</span>
             </div>
             <div class="divider"></div>
             <h4 style="font-size:13px">Or export what you already have</h4>
@@ -3186,6 +4224,18 @@ function renderImport() {
     </div>
 
     <section class="card card-pad" style="margin-bottom:18px">
+      <label class="check-inline" style="font-size:13px">
+        <input type="checkbox" id="import-update-existing" ${state.importUpdateExisting ? "checked" : ""}>
+        Update holdings whose quantity or average cost changed
+      </label>
+      <p class="muted" style="margin:8px 0 0;font-size:12.5px;line-height:1.55">
+        When a row matches a holding you already have, its units, average cost and amounts are
+        updated in place instead of the row being skipped — the preview shows the old → new
+        values first. Leave this off to only add new holdings. Applies to both uploads below.
+      </p>
+    </section>
+
+    <section class="card card-pad" style="margin-bottom:18px">
       <div class="card-head">
         <div>
           <div class="card-title">Upload a broker report</div>
@@ -3193,6 +4243,11 @@ function renderImport() {
         </div>
         <span class="pill pill-muted">ICICI Direct · Kotak</span>
       </div>
+      <label class="field" style="max-width:340px;margin-bottom:14px">
+        <span>Whose broker report is this?<span class="req">*</span></span>
+        <select id="broker-owner">${importOwnerOptions()}</select>
+        <span class="help">Every holding found in the report is assigned to this member.</span>
+      </label>
       <div class="dropzone" id="broker-dropzone" tabindex="0" role="button" aria-label="Upload broker report">
         <div class="dz-icon">${icon("upload")}</div>
         <h4>Drop your broker's holdings export here</h4>
@@ -3210,6 +4265,11 @@ function renderImport() {
         </div>
         <span class="pill pill-muted">.xlsx</span>
       </div>
+      <label class="field" style="max-width:340px;margin-bottom:14px">
+        <span>Owner for rows with no Owner column</span>
+        <select id="import-owner">${importOwnerOptions()}</select>
+        <span class="help">Rows that already name an owner keep theirs. Without this, rows with no owner stay unimported until you pick one.</span>
+      </label>
       <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload Excel workbook">
         <div class="dz-icon">${icon("upload")}</div>
         <h4>Drop your filled template here</h4>
@@ -3224,6 +4284,9 @@ function renderImport() {
   hydrateIcons($("#view"));
   wireDropzone();
   wireBrokerDropzone();
+  $("#import-update-existing")?.addEventListener("change", (event) => {
+    state.importUpdateExisting = event.target.checked;
+  });
 
   if (!state.storageStatus) {
     api("/storage")
@@ -3278,6 +4341,9 @@ async function uploadImport(file) {
   }
   const form = new FormData();
   form.append("file", file);
+  const ownerId = $("#import-owner")?.value || "";
+  if (ownerId) form.append("owner_id", ownerId);
+  form.append("update_existing", state.importUpdateExisting ? "1" : "0");
   try {
     const data = await api("/import/preview", { method: "POST", form });
     state.importPreview = data;
@@ -3299,6 +4365,12 @@ async function uploadBroker(file) {
     toast("Upload the broker's Excel or CSV export", "error");
     return;
   }
+  const ownerId = $("#broker-owner")?.value || "";
+  if (!ownerId) {
+    toast("Choose whose broker report this is first", "warn");
+    $("#broker-file").value = "";
+    return;
+  }
   const zone = $("#broker-dropzone");
   zone?.classList.add("busy");
   if (zone) {
@@ -3307,6 +4379,8 @@ async function uploadBroker(file) {
   }
   const form = new FormData();
   form.append("file", file);
+  form.append("owner_id", ownerId);
+  form.append("update_existing", state.importUpdateExisting ? "1" : "0");
   try {
     const data = await api("/import/broker", { method: "POST", form });
     state.importPreview = data;
@@ -3345,6 +4419,7 @@ function importPreviewHtml(data) {
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span class="pill pill-ok">${data.valid} ready</span>
+          ${data.updates ? `<span class="pill pill-warn">${data.updates} will update</span>` : ""}
           ${data.duplicates ? `<span class="pill pill-warn">${data.duplicates} already imported</span>` : ""}
           ${data.invalid ? `<span class="pill pill-bad">${data.invalid} need fixing</span>` : ""}
           ${data.invalid ? `<button class="btn btn-secondary btn-sm" type="button" data-action="download-fix-sheet">${icon("download")} Rows to fix</button>` : ""}
@@ -3358,9 +4433,9 @@ function importPreviewHtml(data) {
         <div class="info-strip warn">${icon("alert")}<span>${data.sheet_warnings.map(esc).join("<br>")}</span></div>
       </div>` : ""}
       <div class="table-wrap" style="margin-top:14px">
-        <table class="table" style="min-width:820px">
+        <table class="table" style="min-width:920px">
           <thead><tr>
-            <th>Tab / row</th><th>Holding</th><th>Type</th>
+            <th>Tab / row</th><th>Holding</th><th>Owner</th><th>Type</th>
             <th class="num">Invested</th><th class="num">Current</th><th>Status</th>
           </tr></thead>
           <tbody>
@@ -3369,14 +4444,17 @@ function importPreviewHtml(data) {
               const hasWarnings = (row.warnings || []).length > 0;
               const status = hasErrors
                 ? `<span class="pill pill-bad">Needs fixing</span>`
-                : row.duplicate
-                  ? `<span class="pill pill-warn">Already imported — skipped</span>`
-                  : hasWarnings
-                    ? `<span class="pill pill-warn">Check</span>`
-                    : `<span class="pill pill-ok">Ready</span>`;
+                : row.update
+                  ? `<span class="pill pill-warn">Will update</span>`
+                  : row.duplicate
+                    ? `<span class="pill pill-warn">Already imported — skipped</span>`
+                    : hasWarnings
+                      ? `<span class="pill pill-warn">Check</span>`
+                      : `<span class="pill pill-ok">Ready</span>`;
               return `<tr>
                 <td><div style="font-size:12px;font-weight:600">${esc(row.sheet)}</div><div class="cell-sub">Row ${row.row}</div></td>
                 <td><div style="font-weight:650;font-size:12.5px">${esc(row.name)}</div></td>
+                <td style="font-size:12px">${row.owner ? esc(row.owner) : `<span class="pill pill-warn">Not chosen</span>`}</td>
                 <td style="font-size:12px;color:var(--muted)">${esc(row.type_label)}</td>
                 <td class="num">${row.invested != null ? inr(row.invested) : "—"}</td>
                 <td class="num">${row.current != null ? inr(row.current) : "—"}</td>
@@ -3387,8 +4465,8 @@ function importPreviewHtml(data) {
         </table>
       </div>
       <div class="table-foot">
-        <span>${data.preview_truncated ? `Showing the first ${rows.length} rows.` : "All rows shown."} Rows marked as already imported are skipped, so you can re-upload a corrected file safely.</span>
-        <span>Owner defaults to you when left blank.</span>
+        <span>${data.preview_truncated ? `Showing the first ${rows.length} rows.` : "All rows shown."} Rows marked as already imported are skipped, so you can re-upload a corrected file safely. Rows marked will update change the holding you already have.</span>
+        <span>Rows without a chosen owner are not imported.</span>
       </div>
     </section>`;
 }
@@ -3430,7 +4508,10 @@ async function commitImport() {
     await refreshData();
     renderUserChrome();
     route();
-    toast(`Imported ${result.imported} holding${result.imported === 1 ? "" : "s"}`, "ok");
+    const parts = [];
+    if (result.imported) parts.push(`Imported ${result.imported} holding${result.imported === 1 ? "" : "s"}`);
+    if (result.updated) parts.push(`updated ${result.updated}`);
+    toast(parts.join(" · ") || "Nothing new to import", "ok");
   } catch (error) {
     toast(error.message, "error");
     if (button) {
@@ -3468,6 +4549,8 @@ function bindGlobalEvents() {
     try { if (firebaseState.auth) await firebaseState.mod.signOut(firebaseState.auth); } catch { /* ignore */ }
     state.me = null;
     state.dashboard = null;
+    state.income = null;
+    state.corporate = null;
     state.investments = [];
     state.members = [];
     state.importPreview = null;
@@ -3495,11 +4578,27 @@ function bindGlobalEvents() {
       closeDrawer();
       closeModal();
       closeSidebar();
+      return;
+    }
+    if (event.key === "Enter" && event.target.matches?.("[data-drill], [data-member-open], [data-investment-id]")) {
+      event.preventDefault();
+      event.target.click();
     }
   });
 
   document.addEventListener("change", (event) => {
     const el = event.target;
+    if (el.matches?.("[data-income-year]")) {
+      loadIncomeYear(el.value);
+      return;
+    }
+    if (el.dataset?.creditId) {
+      if (el.checked) {
+        el.disabled = true;
+        markIncomeCredited(Number(el.dataset.creditId));
+      }
+      return;
+    }
     if (el.dataset?.filter) {
       state.filters[el.dataset.filter] = el.value;
       if (el.dataset.filter === "sort") state.filters.dir = "desc";
@@ -3545,6 +4644,30 @@ async function handleClick(event) {
     return;
   }
 
+  const drill = event.target.closest("[data-drill]");
+  if (drill) {
+    state.filters = {
+      q: drill.dataset.search || "",
+      category: drill.dataset.category || "",
+      type: drill.dataset.type || "",
+      owner: drill.dataset.owner || "",
+      sort: drill.dataset.sort || "updated",
+      dir: "desc",
+    };
+    state.layout = "flat";
+    if (state.view === "investments") renderInvestments();
+    location.hash = "#/investments";
+    return;
+  }
+
+  const memberOpen = event.target.closest("[data-member-open]");
+  if (memberOpen) {
+    const memberId = Number(memberOpen.dataset.memberOpen);
+    if (isAdmin()) openMemberModal(memberId);
+    else location.hash = "#/members";
+    return;
+  }
+
   const actionEl = event.target.closest("[data-action]");
   if (!actionEl) {
     const row = event.target.closest("[data-investment-id]");
@@ -3573,6 +4696,18 @@ async function handleClick(event) {
     case "bulk-delete":
       await bulkDeleteInvestments();
       break;
+    case "bulk-broker":
+      openBrokerBulkModal();
+      break;
+    case "record-income":
+      openIncomeModal(id);
+      break;
+    case "fetch-corporate":
+      await fetchCorporateActions();
+      break;
+    case "delete-income":
+      await deleteIncomeEntry(id);
+      break;
     case "clear-selection":
       state.selected.clear();
       updateInvestmentsTable();
@@ -3590,6 +4725,10 @@ async function handleClick(event) {
     }
     case "filter-category":
       state.filters.category = actionEl.dataset.category;
+      renderInvestments();
+      break;
+    case "layout":
+      state.layout = actionEl.dataset.layout === "member" ? "member" : "flat";
       renderInvestments();
       break;
     case "clear-filters":
@@ -3672,3 +4811,19 @@ async function handleClick(event) {
 }
 
 document.addEventListener("DOMContentLoaded", boot);
+
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js", { updateViaCache: "none" })
+      .then((registration) => registration.update().catch(() => {}))
+      .catch(() => {});
+  });
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    location.reload();
+  });
+}

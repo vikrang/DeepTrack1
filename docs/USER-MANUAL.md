@@ -31,7 +31,8 @@ Every task is written as "open this → click that → here's what you'll see."
 18. [Market data: live share prices](#18-market-data-live-share-prices)
 19. [Where your data lives](#19-where-your-data-lives)
 20. [Troubleshooting & FAQ](#20-troubleshooting--faq)
-21. [Glossary](#21-glossary)
+21. [Using DeepTrack on your phone](#21-using-deeptrack-on-your-phone)
+22. [Glossary](#22-glossary)
 
 ---
 
@@ -160,16 +161,61 @@ name and shows the date plus "N holdings across N members."
 | **Portfolio value** | What everything is worth today. The small pill shows the gain since you invested. |
 | **Amount invested** | The total money you actually put in, across all holdings. |
 | **Unrealised gain** | Value minus invested, and the overall return %. "Unrealised" means it's a paper gain — you haven't sold. |
-| **Monthly SIPs** | The total of all your recurring monthly mutual-fund investments. |
+| **Income · FY 20xx-xx** | Dividends, interest and rent credited in the current financial year (April–March). |
 
-**The charts and lists below:**
+**The cards and lists below:**
 
-- **Asset allocation** — a donut showing how the total splits across Equity / Debt / Other.
-- **Where the money sits** — the biggest instrument types by current value.
+- **Asset class spread** — Equity / Debt / Other with each class's value, invested amount and
+  gain, and a breakdown of every instrument type inside it (stocks, ETFs, FDs, PPF…). Click a
+  class row, an instrument type or the total to open the ledger filtered to it; every holding
+  carries the brand mark of the company behind it (fund house, bank, insurer, issuer or the
+  listed company itself), with the broker shown as a small badge under the name instead.
+  Logos for the companies already in the app ship with it — banks, insurers, AMCs,
+  India Post, and every listed stock (stock logos come from Groww, keyed by NSE
+  symbol). Names are matched loosely, so "HDFC Bank Ltd" and "FD – Sundaram finance
+  – 12345" still find the right logo. To add or replace one, drop an image into
+  `static/img/logos/` named after the company or its symbol (`equitas-bank.png`,
+  `utkarsh.webp`); companies without an image keep their coloured initials.
+- **Member-wise investment** — each person's invested amount, current value, gain and share
+  of the family portfolio.
+- **Investments by broker** — stocks and ETFs grouped by the broker or DP they were bought
+  through, each with a small brand mark, holding count, value, gain and share of the
+  portfolio. Click a broker to open the ledger filtered to it. Holdings with no broker are
+  counted in the "not tagged" note at the bottom; tag them by editing a stock/ETF or by
+  selecting several under **Investments** and clicking **Set broker**.
+- **Income earned** — pick a financial year from the dropdown and see income grouped by
+  investment with columns for dividend, interest, rent and other, plus what is still pending.
+  Admins can click **Record** to add a dividend, FD interest, rent or other receipt and mark it
+  as *Received in bank* or *Expected, not yet credited*. Click the disclosure line to see and
+  delete individual entries.
+- **Credit checklist** — every pending income entry with the member's bank account and the
+  expected date. An admin ticks an entry once the money actually reaches the bank; overdue
+  items are highlighted in red, items due within a week in amber.
+- **Member bank details** — where each member's dividends, interest and rent should land.
+  Account numbers are masked for other members and for viewers.
+- **Dividends & bonus** — admins pick a lookback window and click **Fetch actions**. DeepTrack
+  reads NSE corporate actions (Yahoo Finance as fallback) for every stock and ETF holding and
+  lists what it found. Tick the actions you want and confirm:
+  - **Dividends** become pending income entries (`shares × Rs per share`) in the checklist;
+    they move to *credited* when you tick them off.
+  - **Bonus / split actions** multiply the quantity and divide the average cost and current
+    price in one step. Bonus shares you already hold in your brokerage should be left
+    unticked.
+  Already-applied actions are skipped, and nothing changes until you confirm.
+
+**Drill down from the dashboard:** almost everything is clickable. Click a number card to open
+all holdings (invested and gain cards sort by that column), click an asset class or an
+instrument type to open the ledger filtered to it, click a member row to see only that member's
+holdings, or click an income row, checklist item or bank row to jump to the holding or member
+behind it. The Investments page has an **All holdings / By member** toggle: *By member* groups
+the ledger into member sections with each section's invested, value and gain subtotals, while
+filters and search keep working.
 - **Largest holdings** — your top holdings; tap a row to open its full details.
-- **By member** — each person's share of the family portfolio.
 - **Upcoming maturities** — deposits and bonds maturing in the next 12 months.
-- **Recent activity** — the last few changes (who added/edited/imported what).
+- **Recent activity** — the last few changes (who added/edited/imported/applied what).
+
+Each investment's drawer also shows its own income for the selected financial year, with a
+**Record income** shortcut.
 
 **Two buttons** top-right: **Export** (download everything to Excel) and **Add investment**.
 
@@ -188,8 +234,9 @@ Let's add a fixed deposit as a worked example. The flow is the same for every ty
    deposit is **Debt**, so click that.
 4. **Choose the type** — click the **Fixed deposits** tile.
 5. Fill the form, which is split into three parts:
-   - **Holding** — the name, the **Owner** (pick the family member from the dropdown),
-     and the **Purchase / start date**.
+   - **Holding** — the name, the **Owner** (pick the family member from the dropdown;
+     it starts empty and must be chosen, even if you are adding your own holding), and
+     the **Purchase / start date**.
    - **Fixed deposits details** — the specifics, e.g. bank, amount, interest rate, tenor.
      Fields marked **\*** are required.
    - **Valuation** — the money figures. *All amounts are in Indian rupees.*
@@ -219,7 +266,9 @@ Pick the category, then the type. Here's what each one asks for and a tip for it
 
 **Direct stocks** — shares you bought yourself.
 Enter **Symbol / ticker** (see the search tip below), **Quantity**, **Average buy price**,
-and the **Demat account** it sits in. *Current price* fills from market data.
+the **Demat account** it sits in and, if you want the broker-wise dashboard, the
+**Broker / DP** it was bought through. *Current price* fills from market data; picking a
+saved demat account fills the broker automatically.
 > Tip: in the **Symbol** box type at least 3 letters (e.g. `REL`) and pick the company
 > from the suggestions — DeepTrack fills the name and exchange for you. This needs
 > market data loaded once (see [section 18](#18-market-data-live-share-prices)).
@@ -288,7 +337,8 @@ earns from the next month, as in a passbook. Leave the amounts blank; type your 
 ### View the full picture
 
 1. Go to **Investments**.
-2. Click any row. A side panel (the "drawer") slides open.
+2. Click any row. A side panel (the "drawer") slides open, with the company's logo
+   shown large at the top — it scales with the screen, so it stays readable on a phone.
 3. You'll see **Current value**, **Invested**, **Gain / loss** and **Return** at the top,
    then **Holding details** — every field, the **Owner**, the purchase date, a unique
    **Record ID** (like `DT-7K4M-9QX2`) and when it was last updated.
@@ -314,8 +364,8 @@ earns from the next month, as in a passbook. Leave the amounts blank; type your 
 
 The **Investments** page ("Every holding in one ledger") is a searchable list.
 
-- **Search box** — type a name, owner, folio, anything: placeholder is
-  *"Search by name, owner, folio…"*. It looks across names, owners, types and notes.
+- **Search box** — type a name, owner, broker, folio, anything: placeholder is
+  *"Search by name, owner, broker…"*. It looks across names, owners, types, brokers and notes.
 - **Category tabs** — **All / Equity / Debt / Other assets**, each with a count.
 - **Type dropdown** — **All types**, or narrow to (say) only Fixed deposits.
 - **Owner dropdown** — **Everyone**, or just one member's holdings.
@@ -336,10 +386,15 @@ If nothing matches you'll see **No holdings match** — click **Clear filters** 
 
 1. In **Investments**, tick the checkbox beside each holding you want to remove. Use the
    top checkbox to **select all** currently shown.
-2. A bar appears: *"N holdings selected"* with **Clear** and **Delete selected**.
+2. A bar appears: *"N holdings selected"* with **Clear**, **Set broker** and
+   **Delete selected**.
 3. Click **Delete selected**.
 4. Confirm **Delete N holdings?** — it warns this *cannot be undone* — then click **Delete N**.
 5. Toast: **Deleted N holdings**.
+
+> **Set broker** in the same bar tags the selected stocks and ETFs to one broker in a
+> single step (other types are left unchanged). Use it after a bulk import to fill the
+> broker-wise dashboard card.
 
 > Tip: filter first (e.g. show only one member, or one type), then select-all, to remove
 > a whole group cleanly.
@@ -366,10 +421,13 @@ DeepTrack checks every row *before* saving anything, so you always get a preview
 5. Back in DeepTrack, under **Upload your workbook**, drag the file onto
    **Drop your filled template here** (or click to browse). Only `.xlsx` files from the
    template are accepted.
-6. You'll see **Review before importing** with three counts: **N ready**,
-   **N already imported**, **N need fixing**, and a row-by-row table.
-7. When you're happy, click **Import N rows**.
-8. Toast: **Imported N holdings**, and a banner summarises *"N imported · N already there · N skipped."*
+6. You'll see **Review before importing** with counts: **N ready**, **N will update**
+   (only when the update checkbox is on), **N already imported**, **N need fixing**,
+   and a row-by-row table.
+7. When you're happy, click **Import N rows**. The same file can't be imported twice — a
+   second upload is refused with the date of the original import.
+8. Toast: **Imported N holdings** (or **updated N**), and a banner summarises
+   *"N imported · N updated · N already there · N skipped."*
 
 ### Or upload your broker's holdings report
 
@@ -387,7 +445,8 @@ template. *(Admins only, same as the template upload.)*
      guess from the name),
    - the **AMFI scheme**, plan, option and AMC for mutual funds,
    - **invested** and **current value** from quantity × price,
-   - the **owner** from the member named in the report (you if nobody is named).
+   - every holding under the member you chose in **Whose broker report is this?** before
+     dropping the file — never the person who happens to be signed in.
 4. Check the **Review before importing** table. Rows the parser couldn't pin down — usually a
    small company not in the NSE list or a fund name too different from AMFI's — show a note
    in the **Status** column. Fix just those, then click **Import N rows**.
@@ -395,6 +454,13 @@ template. *(Admins only, same as the template upload.)*
 Totals rows, zero-quantity rows and price-only footer rows are skipped automatically, and
 re-uploading the same report is safe: holdings already in the portfolio are marked
 **Already imported** and skipped.
+
+Kotak's newer exports work too: the **Portfolio Holdings** CSV (columns *Script Name*,
+*Avg Unit Cost*, *Invested Value*) and the **Demat Holdings & Valuation** Excel, whose
+heading row sits a few lines down under the client name and DP ID. The valuation export
+carries no purchase cost, so its rows import with **Average buy price filled from the
+current price** and a warning asking you to correct the cost afterwards; if a holding
+already exists, its saved average cost is kept and only units are updated.
 
 > Older `.xls` files need the `xlrd` package. It is listed in `requirements.txt`; if you
 > installed DeepTrack before this feature, run `pip install -r requirements.txt` once.
@@ -406,9 +472,10 @@ re-uploading the same report is safe: holdings already in the portfolio are mark
 - **FD maturity is automatic.** Enter the tenor and DeepTrack fills the maturity date and
   amount. Interest frequency defaults to Quarterly and counts 365-day years, matching most
   Indian banks to the rupee.
-- **Owner defaults to you.** The blank template has no Owner column — rows you upload are
-  saved under the member who is signed in. (Exports *do* include Owner, so backups keep
-  each holding with its person.)
+- **Owner is never guessed.** Pick the member in each row's **Owner** column (the template
+  now includes it as a dropdown). Rows without an owner are held back in the preview and
+  import only once an owner is chosen. For an older file with no Owner column, pick one
+  owner for the whole upload above the dropzone — whoever is signed in is irrelevant.
 
 ### Why re-uploading is safe
 
@@ -421,6 +488,28 @@ is ignored, so those rows still import and can be completed later.
 
 Every saved holding also gets a permanent **Record ID** in the first column. Leave it blank
 for a new holding; keep it as-is to refer to an existing one.
+
+### Updating a holding you already have (quantity or price changed)
+
+Suppose you already hold 35 Titan shares and buy 5 more. Upload a row with **Quantity 40**
+and tick **Update holdings whose quantity or average cost changed** (above the upload
+zones on the Import / export page). DeepTrack matches the row to your existing holding by
+member + identifier (ISIN/symbol, folio, policy…) and shows the change before saving:
+
+> **Will update** — Will update this holding — Quantity 35 → 40
+
+- The preview shows the recomputed **invested** and **current value**
+  (e.g. 40 × ₹3,100 = ₹1,24,000 invested; 40 × ₹3,520 = ₹1,40,800 current).
+- Click **Import** and the same holding is edited in place — no duplicate row, same
+  Record ID, and the update counts as **updated 1** in the toast and banner.
+- Changes to **average cost/price** alone (same quantity) are picked up the same way.
+- Only rows whose owner matches the existing holding are updated. If the row names a
+  different member, it's treated as a duplicate and skipped.
+- Leave the checkbox **off** to only add new holdings: a row that matches an existing
+  holding is marked **Already imported** and skipped, exactly as before.
+- The same file uploaded twice is still refused outright (the file fingerprint check),
+  so nothing is ever applied twice. To make a further correction, edit the values in
+  the file (any change alters its fingerprint) and upload again.
 
 ---
 
@@ -511,9 +600,13 @@ account **once**, then pick it from a dropdown when adding shares or ETFs.
 2. Fill **Member**, **Broker / DP**, **Client ID** and an optional **Nickname**.
 3. Click **Add account**.
 
-Now, in a stock/ETF form, the demat field is a dropdown of these saved accounts. Sector,
-broker and current price fill in automatically. To remove one, use its delete button and
-confirm **Remove this demat account?**.
+Now, in a stock/ETF form, the demat field lists **every** saved account with its owner
+(e.g. *Vikram · Kotak · 1203456789*), so you can pick any of them regardless of the
+member selected as owner. Sector and current price fill in automatically, and picking an
+account also fills the **Broker / DP** dropdown. That dropdown stays editable, so a
+holding saved without a demat account can still be tagged to the broker it was bought
+through. To remove an account, use its delete button and confirm **Remove this demat
+account?**.
 
 ---
 
@@ -632,6 +725,15 @@ re-upload (section 13).
 You won't get duplicates: rows already present are marked **Already imported — skipped**.
 If a row you expected was skipped, it matched an existing Record ID or identifier.
 
+**I uploaded the same file twice.**
+The second upload is refused outright — "This exact file was already imported on … by …".
+DeepTrack keeps a fingerprint of every file that actually added holdings, so pressing
+Import twice (or sharing the same file with another admin) can't double anything. Editing
+the workbook changes its fingerprint, and those rows are then handled by the normal
+already-imported check above. To update a quantity or average cost, change it in the file
+and import with **Update holdings whose quantity or average cost changed** ticked
+(section 12, "Updating a holding you already have").
+
 **I deleted something by mistake.**
 Deletions can't be undone in the app. Restore from your latest **Export** backup by
 re-importing it (section 14).
@@ -656,9 +758,56 @@ Full steps in [section 19](#19-where-your-data-lives).
 Make sure the server is running (`start.bat`). If it's hosted, the session cookie settings
 may need adjusting — that's in `docs/DEPLOYMENT.md`.
 
+**The app shows "DeepTrack isn't running" (or looks like an old version).**
+Double-click `start.bat` in the DeepTrack folder and wait for *DeepTrack running*, then
+press **Retry**. When the server stops, DeepTrack shows that status page instead of a
+remembered old screen, so an out-of-date view can no longer appear. The tiny line at the
+bottom of the sidebar (**Build 2026.11.22e**) tells you which copy is loaded; after an
+update it should change. If it doesn't, refresh the page once (Ctrl+F5).
+
 ---
 
-## 21. Glossary
+## 21. Using DeepTrack on your phone
+
+DeepTrack is a responsive web app and can be installed on your phone's home screen — no
+separate mobile app to maintain. Every screen adapts: the sidebar turns into a slide-out
+menu, holdings become tappable cards instead of a wide table (tap one for the full
+drawer), filters and the holding/member toggles wrap onto new rows, and forms open as
+full-height sheets. You can read **and update** from the phone with the same login and
+the same permissions.
+
+**On the same Wi-Fi (quickest, no hosting needed)**
+
+1. On the computer that runs DeepTrack, double-click **start-lan.bat** (instead of
+   start.bat). It prints an address such as `http://192.168.1.5:5000` for every network
+   adapter.
+2. Open that address in the phone's browser. Keep the black window open while you use it.
+3. Sign-in note: Google sign-in only accepts addresses that are authorised in your
+   Firebase project. For home use the simplest fix is to enable password sign-in — set
+   `DEEPTRACK_PASSWORD_LOGIN=1` in `.env`, restart, and sign in with the member's email
+   and password. (Admins can set/reset passwords from **Members → Password**.)
+4. Plain `http://` addresses cannot install the home-screen app (browsers require HTTPS
+   for that) — the site still works normally in the phone browser. For the installable
+   version use the hosted address below.
+
+**From anywhere (recommended): the hosted address**
+
+1. Deploy once (see `docs/DEPLOYMENT.md`; `render.yaml` is ready) and note the
+   `https://…` address.
+2. Sign in on the phone with Google.
+3. **Android (Chrome):** menu ⋮ → **Install app** (or **Add to Home screen**).
+   **iPhone (Safari):** Share → **Add to Home Screen**.
+4. Launch DeepTrack from its icon — it opens full screen like a native app and keeps
+   your session. The dashboard, holdings, incomes and member pages are all reachable,
+   and admin actions work the same as on the computer.
+
+Changes sync instantly through **Firebase cloud storage** if it is configured
+(section 19); without it, they live on the hosting provider's disk, so use the same
+address from every device.
+
+---
+
+## 22. Glossary
 
 | Term | Meaning |
 | --- | --- |

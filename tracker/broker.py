@@ -24,6 +24,8 @@ MAX_ROWS = 5000
 BROKER_MARKS = (
     ("icici", "ICICI Direct"),
     ("kotak", "Kotak Securities"),
+    ("in300214", "Kotak Securities"),
+    ("in300096", "Kotak Securities"),
     ("zerodha", "Zerodha"),
     ("groww", "Groww"),
     ("upstox", "Upstox"),
@@ -41,10 +43,10 @@ BROKER_MARKS = (
 # Normalised broker heading → DeepTrack payload key.
 _HEADER_KEYS = {
     "name": (
-        "company name", "name of the company", "scrip name", "name of the scrip",
-        "security name", "name of security", "instrument name", "stock name",
-        "scheme name", "mutual fund scheme", "fund name", "description",
-        "scrip", "security", "instrument", "scheme", "fund", "stock", "name",
+        "company name", "name of the company", "scrip name", "script name",
+        "name of the scrip", "security name", "name of security", "instrument name",
+        "stock name", "scheme name", "mutual fund scheme", "fund name", "description",
+        "scrip", "script", "security", "instrument", "scheme", "fund", "stock", "name",
     ),
     "symbol": (
         "symbol", "nse symbol", "nse code", "stock symbol", "scrip symbol",
@@ -62,14 +64,16 @@ _HEADER_KEYS = {
         "average buy price", "avg buy price", "average buy rate", "avg buy rate",
         "average cost price", "avg cost price", "average purchase price",
         "avg purchase price", "average cost per unit", "avg cost per unit",
-        "average price", "avg price", "average cost", "avg cost", "average rate",
-        "avg rate", "cost price", "purchase price", "buy price", "buy average",
-        "acquisition price", "average nav", "avg nav",
+        "average unit cost", "avg unit cost", "average price", "avg price",
+        "average cost", "avg cost", "average rate", "avg rate", "cost price",
+        "purchase price", "buy price", "buy average", "acquisition price",
+        "average nav", "avg nav",
     ),
     "price": (
         "last traded price", "ltp", "current price", "market price", "closing price",
         "close price", "closing rate", "market rate", "present price", "current rate",
-        "current nav", "closing nav", "latest nav", "price", "nav",
+        "current nav", "closing nav", "latest nav", "price in", "price in rs",
+        "closing price in", "price", "nav",
     ),
     "invested": (
         "invested value", "investment value", "amount invested", "invested amount",
@@ -80,7 +84,8 @@ _HEADER_KEYS = {
     ),
     "current": (
         "current market value", "current value", "market value", "present value",
-        "current valuation", "market valuation", "holding value", "holdings value",
+        "current valuation", "market valuation", "valuation in", "valuation in rs",
+        "market value in", "holding value", "holdings value",
         "valuation", "total value", "value",
     ),
     "asset_type": ("asset type", "asset class", "instrument type", "security type", "product type"),
@@ -519,14 +524,15 @@ def _detect_broker(filename, tables) -> str | None:
     by_file = _broker_option(Path(filename).stem)
     if by_file:
         return by_file
-    title = " ".join(
-        _text(cell)
-        for _sheet, rows in tables
-        for row in rows[:15]
-        for cell in row[:12]
-        if _text(cell)
-    )
-    return _broker_option(title)
+    for _sheet, rows in tables:
+        header = _find_header(rows)
+        # Only the title block above the table names the broker; holding rows
+        # and footers mention other companies ("SBI Gold ETF", disclaimers).
+        stop = header[0] if header else min(len(rows), 6)
+        found = _broker_option(*(cell for row in rows[:stop] for cell in row[:12]))
+        if found:
+            return found
+    return None
 
 
 def _type_of(values, sheet_kind):
@@ -613,7 +619,22 @@ def _build_market_payload(kind, values, broker, scrips):
     if current is None and price is not None and quantity is not None:
         current = round(price * quantity, 2)
 
+    estimated_cost = False
+    if avg is None and price is not None:
+        # Valuation-only exports (Kotak's Demat Holdings & Valuation) list no
+        # purchase cost; borrow the price so the row can still be saved.
+        avg = price
+        if quantity is not None:
+            invested = round(avg * quantity, 2)
+        estimated_cost = True
+        warnings.append(
+            "Purchase cost is not in this report — Average buy price is filled from the "
+            "current price; edit it after import if needed"
+        )
+
     payload = {"type": kind, "name": name}
+    if estimated_cost:
+        payload["cost_estimated"] = True
     if kind == "stocks":
         payload.update({
             "symbol": symbol,
@@ -701,6 +722,18 @@ def _build_fund_payload(values, catalog, broker):
     if current is None and nav is not None and units is not None:
         current = round(nav * units, 2)
 
+    estimated_cost = False
+    if avg_nav is None and nav is not None:
+        # Valuation-only export: no purchase NAV, so use the current NAV and say so.
+        avg_nav = nav
+        if units is not None:
+            invested = round(avg_nav * units, 2)
+        estimated_cost = True
+        warnings.append(
+            "Purchase cost is not in this report — Average buy price is filled from the "
+            "current NAV; edit it after import if needed"
+        )
+
     folio = _text(values.get("folio_no"))
     payload = {
         "type": "mutual_funds",
@@ -721,6 +754,8 @@ def _build_fund_payload(values, catalog, broker):
         payload["invested_amount"] = invested
     if current is not None:
         payload["current_value"] = current
+    if estimated_cost:
+        payload["cost_estimated"] = True
     registrar = _canonical_choice(values.get("registrar"), fields.REGISTRARS)
     if registrar:
         payload["registrar"] = registrar
@@ -748,7 +783,7 @@ def _parse_sheet(sheet, rows, sheet_kind, broker, members, default_owner_id, cat
     header_index, mapping = header
 
     default_owner = next((m for m in members if m["id"] == default_owner_id), None)
-    default_owner_name = default_owner["name"] if default_owner else "You"
+    default_owner_name = default_owner["name"] if default_owner else ""
 
     preview, payloads = [], []
     section = None
@@ -771,6 +806,11 @@ def _parse_sheet(sheet, rows, sheet_kind, broker, members, default_owner_id, cat
             continue
         quantity = _num(values.get("quantity"))
         if quantity is not None and quantity <= 0:
+            continue
+        if quantity is None and not any(
+            _num(values.get(key)) is not None for key in ("invested", "price", "current")
+        ):
+            # Titles, disclaimers and footers carry no figures.
             continue
         if not name and not _text(values.get("symbol")):
             continue
@@ -797,9 +837,12 @@ def _parse_sheet(sheet, rows, sheet_kind, broker, members, default_owner_id, cat
         else:
             payload["owner_id"] = default_owner_id
             owner_name = default_owner_name
+            if default_owner_id is None:
+                owner_error = "Choose the member this report belongs to"
 
         data, errors = fields.validate_investment(payload)
         if owner_error:
+            errors.pop("owner_id", None)
             errors["owner_email"] = owner_error
         symbol_error = next((w for w in row_warnings if "not in the NSE list yet" in w), None)
         if symbol_error and "symbol" in errors:
@@ -888,7 +931,10 @@ def _mark_duplicates(payloads, owner_names):
             item["preview"]["warnings"].append("Another row in this file describes the same holding")
 
 
-def _mark_existing(payloads, existing_keys, existing_serial, owner_names):
+def _mark_existing(
+    payloads, existing_keys, existing_serial, owner_names,
+    existing_lookup=None, update_existing=False,
+):
     if not existing_keys and not existing_serial:
         return
     for item in payloads:
@@ -896,7 +942,34 @@ def _mark_existing(payloads, existing_keys, existing_serial, owner_names):
             continue
         data, _errors = fields.validate_investment(item["payload"])
         keys = fields.holding_keys(data)
-        if any(key in (existing_keys or set()) for key in keys):
+        record = None
+        for key in keys:
+            if key in (existing_keys or set()):
+                record = (existing_lookup or {}).get(key)
+                break
+        if record is not None:
+            changes, merged = [], None
+            if update_existing and record.get("owner_id") == data.get("owner_id"):
+                ignore = ()
+                if item["payload"].get("cost_estimated"):
+                    type_keys = fields.QUANTITY_KEYS.get(data.get("type")) or ()
+                    if len(type_keys) > 1:
+                        ignore = (type_keys[1],)
+                changes, merged = fields.quantity_changes(record, data, _FIELD_LABELS, ignore)
+            if changes:
+                fields.apply_quantity_change(item["payload"], record, merged)
+                item["update_id"] = record["id"]
+                preview = item["preview"]
+                preview["update"] = {"id": record["id"], "changes": changes}
+                preview["invested"] = item["payload"]["invested_amount"]
+                preview["current"] = item["payload"]["current_value"]
+                preview["warnings"].append(
+                    "Will update this holding — "
+                    + "; ".join(
+                        f"{change['label']} {change['from']} → {change['to']}" for change in changes
+                    )
+                )
+                continue
             item["duplicate"] = True
             item["preview"]["duplicate"] = True
             item["preview"]["warnings"].append("Already in your portfolio — this row will be skipped")
@@ -928,6 +1001,8 @@ def parse_broker(
     default_owner_id,
     existing_keys=None,
     existing_serial=None,
+    existing_lookup=None,
+    update_existing=False,
 ):
     """Parse a broker holdings export. Returns (preview, payloads, warnings, broker)."""
     tables = _read_tables(stream, filename)
@@ -961,7 +1036,10 @@ def parse_broker(
 
     owner_names = {m["id"]: m["name"] for m in members}
     _mark_duplicates(payloads, owner_names)
-    _mark_existing(payloads, existing_keys, existing_serial, owner_names)
+    _mark_existing(
+        payloads, existing_keys, existing_serial, owner_names,
+        existing_lookup=existing_lookup, update_existing=update_existing,
+    )
     if broker:
         warnings.insert(0, f"{broker} report recognised — {len(preview)} holding(s) read.")
     return preview, payloads, warnings, broker

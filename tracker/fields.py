@@ -18,6 +18,14 @@ CATEGORIES = [
     {"key": "other", "label": "Other assets", "tagline": "Property, gold, crypto, insurance", "color": "#f59e0b"},
 ]
 
+INCOME_KINDS = [
+    {"key": "dividend", "label": "Dividend", "color": "#10b981"},
+    {"key": "interest", "label": "Interest", "color": "#0ea5e9"},
+    {"key": "rent", "label": "Rent", "color": "#f59e0b"},
+    {"key": "other", "label": "Other", "color": "#8b5cf6"},
+]
+INCOME_KIND_MAP = {item["key"]: item for item in INCOME_KINDS}
+
 EXCHANGES = ["NSE", "BSE"]
 PLANS = ["Direct", "Regular"]
 MF_OPTIONS = ["Growth", "IDCW - Payout", "IDCW - Reinvestment"]
@@ -34,6 +42,19 @@ BANKS = [
     "Jana Small Finance Bank", "ESAF Small Finance Bank", "Suryoday Small Finance Bank",
     "Utkarsh Small Finance Bank", "Capital Small Finance Bank", "North East Small Finance Bank",
     "Bandhan Bank", "India Post Payments Bank", "Other",
+]
+
+# FD/RD issuers include company deposits, not just banks.
+DEPOSIT_ISSUERS = [
+    *[bank for bank in BANKS if bank != "Other"],
+    "slice",
+    "Bajaj Finance", "Shriram Finance", "Sundaram Finance", "Muthoot Finance",
+    "Manappuram Finance", "Tamil Nadu Power Finance", "IIFL Finance",
+    "L&T Finance", "Mahindra Finance", "Cholamandalam Investment & Finance",
+    "Bajaj Housing Finance", "PNB Housing Finance", "LIC Housing Finance",
+    "ICICI Home Finance", "HUDCO", "HDB Financial Services", "Poonawalla Fincorp",
+    "Sammaan Capital", "Aditya Birla Capital",
+    "Other",
 ]
 
 AMCS = [
@@ -149,7 +170,8 @@ _TYPES = [
             f("ltp", "Current price (LTP)", "number", unit="₹", min=0, auto=True),
             f("sector", "Sector", "select", options=SECTORS, auto=True),
             f("demat_id", "Demat master account", "select", options_from="demat_accounts"),
-            f("broker", "Broker / DP", "select", options=BROKERS, auto=True),
+            f("broker", "Broker / DP", "select", options=BROKERS,
+              help="Who the shares were bought through. Filled automatically when a demat account is picked."),
             f("demat_account", "Demat / client ID", auto=True),
         ],
     },
@@ -200,7 +222,8 @@ _TYPES = [
                 "Nifty 50", "Nifty Next 50", "Bank Nifty", "Nifty Midcap 150", "Gold",
                 "Silver", "International", "Other"]),
             f("demat_id", "Demat master account", "select", options_from="demat_accounts"),
-            f("broker", "Broker / DP", "select", options=BROKERS, auto=True),
+            f("broker", "Broker / DP", "select", options=BROKERS,
+              help="Who the shares were bought through. Filled automatically when a demat account is picked."),
             f("demat_account", "Demat / client ID", auto=True),
         ],
     },
@@ -216,7 +239,7 @@ _TYPES = [
         "value_label": "Current value",
         "derive": {"invested": ("principal",)},
         "fields": [
-            f("bank", "Bank / NBFC", "select", options=BANKS, required=True),
+            f("bank", "Bank / NBFC", "select", options=DEPOSIT_ISSUERS, required=True),
             f("company_name", "Company name", placeholder="e.g. Bajaj Finance",
               help="For company or NBFC deposits: who issued the deposit"),
             f("account_no", "FD account / receipt no.", placeholder="e.g. 3270456123"),
@@ -252,7 +275,7 @@ _TYPES = [
         "invested_label": "Total deposited",
         "value_label": "Current value",
         "fields": [
-            f("bank", "Bank / post office", "select", options=BANKS, required=True),
+            f("bank", "Bank / post office", "select", options=DEPOSIT_ISSUERS, required=True),
             f("account_no", "RD account number"),
             f("customer_id", "Customer ID / folio", placeholder="e.g. RD-889201",
               help="Deposits under the same customer ID and bank are grouped into one folio."),
@@ -503,6 +526,7 @@ def meta() -> dict:
         "banks": BANKS,
         "brokers": BROKERS,
         "account_types": ACCOUNT_TYPES,
+        "income_kinds": INCOME_KINDS,
         "currency": "INR",
     }
 
@@ -563,6 +587,72 @@ def _derive_values(type_meta: dict, details: dict) -> tuple:
 
 
 PPF_MAX_YEARS = 15
+
+
+def _as_number(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def pretty_number(value):
+    number = _as_number(value)
+    if number is None:
+        return "—"
+    return f"{number:,.0f}" if number.is_integer() else f"{number:,.2f}"
+
+
+def quantity_changes(record, data, labels=None, ignore=()):
+    """Compare a matched row with the saved holding. Returns (changes, merged_details).
+
+    Only units and average cost decide whether it is the same position; a price
+    change alone is merged in without by itself triggering an update. Keys in
+    ``ignore`` (a valuation-only report's estimated cost) keep the saved value.
+    """
+    keys = QUANTITY_KEYS.get(data.get("type")) or ()
+    if not keys or not record:
+        return [], None
+    old_details = record.get("details") or {}
+    new_details = dict(data.get("details") or {})
+    merged = dict(old_details)
+    for key in keys:
+        if key in ignore:
+            continue
+        value = new_details.get(key)
+        if value not in (None, ""):
+            merged[key] = value
+    changes = []
+    for key in keys[:2]:
+        if key in ignore:
+            continue
+        value = new_details.get(key)
+        if value in (None, ""):
+            continue
+        old_value = old_details.get(key)
+        old_num, new_num = _as_number(old_value), _as_number(value)
+        if old_num is not None and new_num is not None:
+            changed = abs(old_num - new_num) > 1e-9
+        else:
+            changed = old_value != value
+        if changed:
+            changes.append({
+                "field": key,
+                "label": (labels or {}).get(key) or str(key).replace("_", " ").capitalize(),
+                "from": pretty_number(old_value),
+                "to": pretty_number(value),
+            })
+    return changes, merged
+
+
+def apply_quantity_change(payload, record, merged) -> None:
+    type_meta = TYPES[payload["type"]]
+    for key in QUANTITY_KEYS.get(payload["type"], ()):
+        if key in merged:
+            payload[key] = merged[key]
+    invested, value = _derive_values(type_meta, merged)
+    payload["invested_amount"] = invested if invested is not None else record.get("invested_amount")
+    payload["current_value"] = value if value is not None else record.get("current_value")
 
 
 def ppf_contribution_years(start_date, today=None):
@@ -759,17 +849,18 @@ def _apply_demat(account, details: dict) -> None:
 
 
 def resolve_demat(value, owner_id):
-    """Match a master row by id, label or client ID for the given owner."""
+    """Match any saved account by id, label or client ID; the owner's own account wins ties."""
     if value is None or str(value).strip() == "":
         return None
     text = str(value).strip()
     if text.isdigit():
         row = _db_row("SELECT * FROM demat_accounts WHERE id = ?", (int(text),))
-        if row is not None and (owner_id is None or row["owner_id"] == owner_id):
+        if row is not None:
             return row
-    rows = db_demat_accounts(owner_id)
+    own = db_demat_accounts(owner_id) if owner_id else []
+    others = [r for r in db_demat_accounts(None) if not owner_id or r["owner_id"] != owner_id]
     lowered = text.lower()
-    for row in rows:
+    for row in [*own, *others]:
         if _demat_label(row).lower() == lowered or str(row["client_id"]).lower() == lowered:
             return row
     return None
@@ -802,6 +893,16 @@ TENOR_KEYS = ("tenor_years", "tenor_months", "tenor_days")
 IDENTITY_FIELDS = (
     "account_no", "uan", "pran", "policy_no", "isin", "symbol", "folio_no", "bill_no", "survey_no",
 )
+
+# Fields that change when more units are bought or sold: (quantity, average cost, current price).
+# Import "update existing" compares the first two and recalculates amounts from the merged row.
+QUANTITY_KEYS = {
+    "stocks": ("quantity", "avg_buy_price", "ltp"),
+    "etf": ("units", "avg_price", "current_price"),
+    "mutual_funds": ("units", "avg_nav", "current_nav"),
+    "bonds": ("quantity", "purchase_price"),
+    "crypto": ("quantity", "avg_buy_price", "current_price"),
+}
 
 # Identifiers that belong to one contract, so they cannot legitimately repeat for two members.
 # Symbol and ISIN are excluded: two members may hold the same stock or bond.

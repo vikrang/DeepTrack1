@@ -272,6 +272,7 @@ def _field_labels(type_meta):
     labels.setdefault("start_date", "Purchase / start date")
     labels["name"] = "Company name, bank or scheme" if type_meta["key"] in DEPOSIT_TYPES else "Investment name"
     labels.setdefault("owner_email", "Owner")
+    labels.setdefault("owner_id", "Owner")
     return labels
 
 
@@ -557,10 +558,10 @@ def _readme_sheet(wb):
         ("1. Pick the right tab", "There is one tab per instrument type, colour-coded by asset class. Only fill tabs you need."),
         ("2. Fill one row per holding", "Columns marked * are required. Everything else is optional but improves reporting. Deposit tabs have no name column; DeepTrack names each deposit from the bank or scheme and reference number."),
         ("3. Use the dropdowns", "Columns with a small arrow have validated lists based on Indian banks, AMCs, insurers, exchanges and more."),
-        ("4. Only raw inputs", "Calculated columns (maturity amount, derived totals) and fetched columns (sector, market price, exchange, broker) are not in this sheet; the two maturity columns on the fixed deposit tab are the exception and fill themselves in. DeepTrack recalculates on import and refreshes prices from Market data."),
+        ("4. Only raw inputs", "Calculated columns (maturity amount, derived totals) and fetched columns (sector, market price, exchange) are not in this sheet; the two maturity columns on the fixed deposit tab are the exception and fill themselves in. The stocks and ETFs tabs carry a Broker / DP column so each row can be tagged for the broker-wise dashboard. DeepTrack recalculates on import and refreshes prices from Market data."),
         ("5. Dates", "Purchase / start date sits right after quantity. Fixed deposits run company, type, reference no, amount, date of purchase, interest rate, tenor and interest frequency. Use DD-MM-YYYY, e.g. 31-03-2026."),
         ("6. Tenor & maturity", "Enter the tenor (years, months, days). Maturity date and maturity amount are calculated columns on the fixed deposit tab — they show automatically and need no input. If the bank statement only gives the maturity date, paste it and leave the tenor blank; DeepTrack works out the tenor. On recurring deposits and small savings you can enter either the tenor or the maturity date."),
-        ("7. Owner", "The blank template has no Owner column: every row is saved under the member who signs in and uploads it. Exports do include an Owner column, so backups keep each holding with its member."),
+        ("7. Owner", "Pick the member who owns each holding in the Owner column. Rows without an owner are held back, never assigned to whoever uploads the file. For older files without an Owner column, choose one owner for the whole upload in DeepTrack."),
         ("8. Upload", "Save the file and upload it in DeepTrack under Import. You will see a preview before anything is saved."),
     ]
     row = 5
@@ -639,7 +640,7 @@ def _guide_sheet(wb, include_owner=True):
                 values = [type_meta["sheet"], label, "Yes", "text", type_meta.get("name_placeholder", "")]
             elif key == "owner_email":
                 values = [type_meta["sheet"], label, "", "member",
-                          "Pick a member name. Blank = the importing member"]
+                          "Pick the member who owns this holding. Blank rows are not imported"]
             elif key == "invested_amount":
                 values = [type_meta["sheet"], label, "", "number", "Rupees, e.g. 150000"]
             elif key == "current_value":
@@ -730,7 +731,7 @@ def _owner_names():
 def template_bytes(demat_labels=None, owner_names=None) -> bytes:
     labels = _demat_labels() if demat_labels is None else demat_labels
     owners = _owner_names() if owner_names is None else owner_names
-    return _to_bytes(build_workbook(demat_labels=labels, owner_names=owners, include_owner=False))
+    return _to_bytes(build_workbook(demat_labels=labels, owner_names=owners, include_owner=True))
 
 
 def export_bytes(rows: list[dict], demat_labels=None, owner_names=None) -> bytes:
@@ -787,10 +788,13 @@ def _join_names(names):
 def parse_workbook(
     stream,
     members: list[dict],
-    default_owner_id: int,
+    default_owner_id: int | None,
     existing_keys: set | None = None,
     existing_serial: dict | None = None,
     existing_ids: set | None = None,
+    existing_lookup: dict | None = None,
+    existing_by_id: dict | None = None,
+    update_existing: bool = False,
 ):
     """Parse an uploaded workbook. Returns (preview_rows, payloads, warnings)."""
     try:
@@ -807,7 +811,7 @@ def parse_workbook(
         first = member["name"].strip().split()[0].lower()
         by_first_name.setdefault(first, []).append(member)
     default_owner = next((m for m in members if m["id"] == default_owner_id), None)
-    default_owner_name = default_owner["name"] if default_owner else "You"
+    default_owner_name = default_owner["name"] if default_owner else ""
 
     def find_member(text):
         lowered = text.lower()
@@ -867,8 +871,12 @@ def parse_workbook(
                     owner_name = owner_raw
             else:
                 payload["owner_id"] = default_owner_id
-                owner_error = None
-                owner_name = default_owner_name
+                if default_owner_id is None:
+                    owner_error = "Choose the owner — pick a member in the Owner column or choose one for the whole file"
+                    owner_name = ""
+                else:
+                    owner_error = None
+                    owner_name = default_owner_name
 
             name = str(raw.get("name") or "").strip()
             if not name and type_key in DEPOSIT_TYPES:
@@ -882,6 +890,7 @@ def parse_workbook(
 
             data, errors = fields.validate_investment(payload)
             if owner_error:
+                errors.pop("owner_id", None)
                 errors["owner_email"] = owner_error
             known_id = bool(record_id) and record_id in (existing_ids or set())
             if record_id and not known_id:
@@ -923,14 +932,44 @@ def parse_workbook(
                     elif data.get("current_value") == data.get("invested_amount"):
                         preview_row["warnings"].append("Current value defaults to invested amount")
                 row_keys = fields.holding_keys(data)
+                update_id = None
+                record = None
                 if known_id:
-                    preview_row["duplicate"] = True
-                    preview_row["warnings"].append(
-                        f"Already in your portfolio (record {record_id}) — this row will be skipped"
-                    )
-                elif existing_keys and any(key in existing_keys for key in row_keys):
-                    preview_row["duplicate"] = True
-                    preview_row["warnings"].append("Already in your portfolio — this row will be skipped")
+                    record = (existing_by_id or {}).get(record_id)
+                if record is None and existing_keys:
+                    for key in row_keys:
+                        if key in existing_keys:
+                            record = (existing_lookup or {}).get(key)
+                            break
+                if record is not None:
+                    changes, merged = [], None
+                    if update_existing and record.get("owner_id") == data.get("owner_id"):
+                        changes, merged = fields.quantity_changes(record, data, labels)
+                    if changes:
+                        update_id = record["id"]
+                        fields.apply_quantity_change(payload, record, merged)
+                        refreshed, _ignored = fields.validate_investment(payload)
+                        if refreshed:
+                            data = refreshed
+                        preview_row["update"] = {"id": record["id"], "changes": changes}
+                        preview_row["invested"] = payload["invested_amount"]
+                        preview_row["current"] = payload["current_value"]
+                        preview_row["warnings"].append(
+                            "Will update this holding — "
+                            + "; ".join(
+                                f"{change['label']} {change['from']} → {change['to']}" for change in changes
+                            )
+                        )
+                    else:
+                        preview_row["duplicate"] = True
+                        if known_id:
+                            preview_row["warnings"].append(
+                                f"Already in your portfolio (record {record_id}) — this row will be skipped"
+                            )
+                        else:
+                            preview_row["warnings"].append(
+                                "Already in your portfolio — this row will be skipped"
+                            )
                 else:
                     for serial in fields.serial_keys(data):
                         holders = [
@@ -952,6 +991,7 @@ def parse_workbook(
                 "payload": payload,
                 "valid": not errors,
                 "duplicate": preview_row["duplicate"],
+                "update_id": update_id,
             })
 
     if recognised == 0:
