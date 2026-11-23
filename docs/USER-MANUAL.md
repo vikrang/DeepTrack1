@@ -461,11 +461,14 @@ The **Investments** page ("Every holding in one ledger") is a searchable list.
 | --- | --- |
 | **Invested** | The money you put in. |
 | **Current** | What the holding is worth today. For cumulative deposits, bonds without a coupon frequency and accrued instruments it is **principal + interest accrued to date**; for deposits and bonds that pay interest out periodically it is the **principal only**, because the interest has already left the deposit. A footnote under the table repeats this rule. Values accrue by themselves from the saved rate and dates — no refetch needed. |
-| **Maturity** | The maturity date from the holding's details; "—" for holdings that don't mature. Click the row to open the drawer. |
 | **Gain** | Current minus invested, rounded to the nearest rupee, with a ▲/▼ trend icon and the percentage beside it. |
 
 The footer totals what you're looking at: *"Showing N of M holdings · Invested ₹X ·
 Value ₹Y · Gain ±₹Z."*
+
+Click any row to open its drill-down drawer: just under **Current value** you'll see
+**Matures <date> · Maturity value ₹X** for deposits and bonds that mature, with the
+maturity value calculated from the saved rate and dates.
 
 If nothing matches you'll see **No holdings match** — click **Clear filters** to start over.
 

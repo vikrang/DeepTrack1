@@ -1110,8 +1110,7 @@ img { display: block; }
 .table .name-cell .sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; white-space: nowrap; }
 .table .num .sub { display: block; font-size: 10.5px; font-weight: 500; color: var(--muted); }
-.table .date-cell { white-space: nowrap; }
-.inv-table-card .table { min-width: 1100px; }
+.inv-table-card .table { min-width: 980px; }
 .inv-table-card .table thead th,
 .inv-table-card .table tbody td { padding-left: 12px; padding-right: 12px; }
 .inv-table-card .table td.name-cell { min-width: 240px; }
@@ -1291,6 +1290,9 @@ img { display: block; }
 .drawer-hero { padding: 16px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line-2); margin-bottom: 20px; }
 .drawer-hero .dh-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 700; }
 .drawer-hero .dh-value { font-size: 27px; font-weight: 800; letter-spacing: -0.04em; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.drawer-hero .dh-maturity { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; margin-top: 5px; font-size: 12px; color: var(--muted); }
+.drawer-hero .dh-maturity .dot { opacity: 0.55; }
+.drawer-hero .dh-maturity strong { color: var(--ink-2); font-weight: 700; font-variant-numeric: tabular-nums; }
 .drawer-hero .dh-row { display: flex; gap: 24px; margin-top: 12px; }
 .drawer-hero .dh-item .k { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
 .drawer-hero .dh-item .v { font-size: 13.5px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }

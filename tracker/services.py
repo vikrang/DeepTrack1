@@ -90,6 +90,19 @@ def investment_payload(row) -> dict:
     )
     display = current if effective is None else float(effective)
     display_gain = display - invested
+    maturity_date = str(details.get("maturity_date") or "")
+    maturity_value = None
+    if maturity_date:
+        try:
+            at_maturity = date.fromisoformat(maturity_date[:10])
+        except ValueError:
+            at_maturity = None
+        if at_maturity:
+            projected, _ = fields.effective_value(
+                data.get("type"), details, invested, current, data.get("start_date"), today=at_maturity
+            )
+            if projected is not None:
+                maturity_value = round(float(projected), 2)
     type_meta = fields.TYPES.get(data.get("type"), {})
     category = CATEGORY_MAP.get(data.get("category"), {})
     return {
@@ -111,7 +124,8 @@ def investment_payload(row) -> dict:
         "display_gain": round(display_gain, 2),
         "display_gain_pct": round(display_gain / invested * 100, 2) if invested else 0.0,
         "value_note": value_note,
-        "maturity_date": str(details.get("maturity_date") or ""),
+        "maturity_date": maturity_date,
+        "maturity_value": maturity_value,
         "start_date": data.get("start_date") or "",
         "notes": data.get("notes") or "",
         "broker": str(details.get("broker") or "").strip(),

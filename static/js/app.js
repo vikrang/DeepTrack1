@@ -1934,7 +1934,6 @@ function renderInvestments() {
               <th class="hide-sm sortable" data-action="sort" data-sort="owner">Owner ${sortIndicator("owner")}</th>
               <th class="num sortable" data-action="sort" data-sort="invested">Invested ${sortIndicator("invested")}</th>
               <th class="num sortable" data-action="sort" data-sort="current">Current ${sortIndicator("current")}</th>
-              <th class="hide-sm date-cell">Maturity</th>
               <th class="num sortable" data-action="sort" data-sort="gain">Gain ${sortIndicator("gain")}</th>
               <th class="actions-cell"></th>
             </tr>
@@ -1961,7 +1960,7 @@ function updateInvestmentsTable() {
   const body = $("#inv-body");
   if (!body) return;
   if (!items.length) {
-    body.innerHTML = `<tr><td colspan="${isAdmin() ? 9 : 8}">
+    body.innerHTML = `<tr><td colspan="${isAdmin() ? 8 : 7}">
       <div class="empty" style="padding:44px 16px">
         <div class="empty-icon">${icon("search")}</div>
         <h3>No holdings match</h3>
@@ -1970,7 +1969,7 @@ function updateInvestmentsTable() {
       </div>
     </td></tr>`;
   } else if (state.layout === "member") {
-    const cols = isAdmin() ? 9 : 8;
+    const cols = isAdmin() ? 8 : 7;
     body.innerHTML = investmentsByMember(items).map((group) => groupHtml(group, cols)).join("");
   } else {
     body.innerHTML = items.map((item) => investmentRowHtml(item)).join("");
@@ -2024,7 +2023,6 @@ function investmentRowHtml(item) {
       </td>
       <td class="num">${inr(item.invested_amount)}</td>
       <td class="num">${inr(item.display_value)}</td>
-      <td class="hide-sm date-cell">${item.maturity_date ? fmtDate(item.maturity_date) : `<span class="muted">—</span>`}</td>
       <td class="num">${gainCell(item.display_gain, item.display_gain_pct)}</td>
       <td class="actions-cell">
         ${admin ? `
@@ -2346,6 +2344,10 @@ function openInvestmentDrawer(id) {
       <div class="drawer-hero">
         <div class="dh-label">Current value</div>
         <div class="dh-value">${inr2(item.display_value)}</div>
+        ${item.maturity_date ? `<div class="dh-maturity">
+          <span>Matures ${fmtDate(item.maturity_date)}</span>
+          ${item.maturity_value != null ? `<span class="dot">·</span><span>Maturity value <strong>${inr(item.maturity_value)}</strong></span>` : ""}
+        </div>` : ""}
         <div class="dh-row">
           <div class="dh-item"><div class="k">Invested</div><div class="v">${inr2(item.invested_amount)}</div></div>
           <div class="dh-item"><div class="k">Gain / loss</div><div class="v" style="color:${item.display_gain >= 0 ? "var(--ok)" : "var(--bad)"}">${item.display_gain >= 0 ? "+" : "−"}${inr2(Math.abs(item.display_gain))}</div></div>
