@@ -300,6 +300,24 @@ to fetch the next 100, and **Refresh** for anything newer. Nothing is deleted
 automatically, and the log survives restarts and redeployments because it lives in the
 same database as your portfolio. Viewers can read it too.
 
+### Recently deleted — the 30-day recycle bin
+
+A delete is never final by accident. Every holding, trade, income entry, demat account
+and member you remove goes to **Recently deleted**, the card at the top of the Activity
+page, and stays there for **30 days**:
+
+- The delete toast itself carries an **Undo** button — one click puts the record back,
+  no need to hunt for it.
+- To restore later, find the row on the Activity page and click **Restore**. A deleted
+  holding comes back with its trades, income entries and corporate actions attached.
+- **Delete forever** purges an item immediately; after 30 days the cleanup happens
+  automatically the next time the page loads.
+- The recycle bin is mirrored to the cloud along with the portfolio, so a wrong delete
+  can still be undone after the hosted app redeploys.
+
+If a record can't go back (say its owner was deleted too, or a trade already exists on
+the holding), the toast explains why — nothing is lost, and the item stays in the bin.
+
 ---
 
 ## 9. Adding your first investment
@@ -639,6 +657,50 @@ already exists, its saved average cost is kept and only units are updated.
 > Older `.xls` files need the `xlrd` package. It is listed in `requirements.txt`; if you
 > installed DeepTrack before this feature, run `pip install -r requirements.txt` once.
 
+### Or import your own debt sheet
+
+Already keep FDs, bonds and small savings in a personal Excel file? You don't have to
+retype them into the template. Drop that file on **Import your own debt sheet** at the
+bottom of the Import / export page — no particular layout is needed.
+
+DeepTrack looks for the header row (in any of the first 25 rows of each tab) and reads
+the columns by their labels: **Category** / Type, **Deposit** / Company / Bank / Issuer,
+**Deposit date** / Receipt date, **Rate** / Interest, **Maturity date**, **Deposit
+amount**, and — when present — **Maturity amount**, **Mode**, **Remarks**, **Name** /
+Owner and **Interest frequency**. Missing columns are simply left out of the holding.
+Each row then becomes a holding of the right type:
+
+| Sheet says | DeepTrack creates |
+| --- | --- |
+| FD, bank FD, corp FD, SFB deposit | Fixed deposit (bank master matched where possible) |
+| RD | Recurring deposit |
+| PPF | PPF account |
+| Sukanya Samriddhi | Small savings · Sukanya Samriddhi |
+| KVP, NSC, SCSS, MIS, Post Office | Small savings with the matching scheme |
+| Govt bonds, G-Sec | Bonds · G-Sec |
+| Corporate bond, NCD, Debenture | Bonds · Corporate Bond / Debenture |
+| Gold, SGB | Small savings · Sovereign Gold Bond |
+
+Rows for NPS are skipped with a note: an NPS holding needs its PRAN, so add it through
+**Debt → NPS** instead. Rows without a deposit amount (notes, totals) are skipped
+silently, and a maturity year typed as 1930 instead of 2030 is read as 2030 with a
+warning.
+
+**Whose is it?** Rows that name a member keep that owner. Rows from a tab with no Name
+column — for example a mother's sheet — go to the member picked in **Owner for rows with
+no Owner column** above, so pick that member *before* dropping the file.
+
+**What gets checked.** Every row goes through the same validation as a hand-typed
+holding. Rows missing something that can't be invented — an RD without a monthly
+amount, an FD without a rate or maturity — stay in the preview as **Needs fixing** and
+are not imported; fix them in DeepTrack after importing the rest.
+
+**What is saved.** Each holding is stored at its **deposit amount** (not the maturity
+value, so today's totals stay honest); the maturity value, the sheet's remarks and the
+source tab and row are kept in the holding's notes. Re-uploading the same file is safe:
+rows already saved — matched by receipt number, ISIN or (for deposits without one) by
+owner + name + amount + date — show as **Already imported** and are skipped.
+
 ### Three conveniences that save typing
 
 - **Leave money boxes blank.** *Amount invested* and *Current value* are computed from the
@@ -658,7 +720,10 @@ marked **Already imported — skipped**. DeepTrack recognises repeats only by a 
 **unique identifiers** (reference number, ISIN, symbol, folio, policy, UAN, PRAN…) — never
 by name, amount or rate. So if you fix a few rows and upload the whole file again, only the
 genuinely new rows are added. A blank or placeholder reference (`TOBEFILLED`, `TBD`, `NA`)
-is ignored, so those rows still import and can be completed later.
+is ignored, so those rows still import and can be completed later. (The exception is a
+deposit that carries no reference number at all in your own debt sheet — there it uses
+owner + name + amount + date, the strictest combination available, so re-uploads stay
+safe.)
 
 Every saved holding also gets a permanent **Record ID** in the first column. Leave it blank
 for a new holding; keep it as-is to refer to an existing one.

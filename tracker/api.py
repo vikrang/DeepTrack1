@@ -15,7 +15,7 @@ import requests
 from flask import Blueprint, g, jsonify, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import broker, config, corporate, db, excelio, fields, firebase, market, seed, services, transactions
+from . import broker, config, corporate, db, debtio, excelio, fields, firebase, market, seed, services, transactions
 from .validators import (
     parse_date,
     parse_number,
@@ -567,6 +567,219 @@ def change_password(member_id: int):
     return jsonify(ok=True)
 
 
+TRASH_DAYS = 30
+TRASH_LIMIT = 200
+
+
+def _rowdict(row):
+    return {key: row[key] for key in row.keys()} if row is not None else None
+
+
+def _trash_cutoff() -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=TRASH_DAYS)).replace(microsecond=0).isoformat()
+
+
+def _trim_trash(conn) -> None:
+    conn.execute("DELETE FROM trash WHERE deleted_at < ?", (_trash_cutoff(),))
+    conn.execute(
+        "DELETE FROM trash WHERE id NOT IN (SELECT id FROM trash ORDER BY id DESC LIMIT ?)",
+        (TRASH_LIMIT,),
+    )
+
+
+def _move_to_trash(conn, entity: str, label: str, payload: dict, actor_id, now=None, detail: str = "") -> int:
+    now = now or db.now()
+    cursor = conn.execute(
+        """INSERT INTO trash (entity, label, detail, payload, deleted_by, deleted_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (entity, label, detail or None, json.dumps(payload, ensure_ascii=False), actor_id, now),
+    )
+    _trim_trash(conn)
+    return cursor.lastrowid
+
+
+def _snapshot_investment(conn, item_id: int):
+    item = conn.execute("SELECT * FROM investments WHERE id = ?", (item_id,)).fetchone()
+    if item is None:
+        return None
+    children = {}
+    for name, sql in (
+        ("transactions", "SELECT * FROM transactions WHERE investment_id = ? ORDER BY id"),
+        ("incomes", "SELECT * FROM incomes WHERE investment_id = ? ORDER BY id"),
+        ("corporate_actions", "SELECT * FROM corporate_actions WHERE investment_id = ? ORDER BY id"),
+    ):
+        children[name] = [_rowdict(row) for row in conn.execute(sql, (item_id,))]
+    bits = []
+    if children["transactions"]:
+        bits.append(f"{len(children['transactions'])} trade(s)")
+    if children["incomes"]:
+        bits.append(f"{len(children['incomes'])} income entr{'y' if len(children['incomes']) == 1 else 'ies'}")
+    if children["corporate_actions"]:
+        bits.append(f"{len(children['corporate_actions'])} corporate action(s)")
+    return {
+        "label": item["name"],
+        "detail": " · ".join(bits),
+        "payload": {"investment": _rowdict(item), **children},
+    }
+
+
+def _insert_row(conn, table: str, row: dict, replace: bool = False) -> None:
+    keys = list(row)
+    verb = "INSERT OR REPLACE" if replace else "INSERT OR IGNORE"
+    conn.execute(
+        f"{verb} INTO {table} ({', '.join(keys)}) VALUES ({', '.join('?' for _ in keys)})",
+        [row[key] for key in keys],
+    )
+
+
+def _owner_missing(conn, owner_id) -> bool:
+    return conn.execute("SELECT 1 FROM users WHERE id = ?", (owner_id,)).fetchone() is None
+
+
+def _restore_item(conn, entity: str, payload: dict, now: str) -> str:
+    """Put a trashed record back; raises ValueError with a reason when it can't be."""
+    if entity == "investment":
+        item = dict(payload["investment"])
+        if _owner_missing(conn, item.get("owner_id")):
+            raise ValueError("The member who owned this holding no longer exists — restore that member first.")
+        if conn.execute("SELECT 1 FROM investments WHERE public_id = ?", (item.get("public_id"),)).fetchone():
+            item["public_id"] = db.new_public_id()
+        item["updated_at"] = now
+        _insert_row(conn, "investments", item)
+        for txn in payload.get("transactions") or []:
+            _insert_row(conn, "transactions", txn)
+        for income in payload.get("incomes") or []:
+            income = dict(income)
+            if income.get("source_ref") and conn.execute(
+                "SELECT 1 FROM incomes WHERE source_ref = ?", (income["source_ref"],)
+            ).fetchone():
+                income["source_ref"] = None
+            _insert_row(conn, "incomes", income)
+        for action in payload.get("corporate_actions") or []:
+            _insert_row(conn, "corporate_actions", action)
+        return item["name"]
+
+    if entity == "transaction":
+        txn = dict(payload["transaction"])
+        if conn.execute("SELECT 1 FROM investments WHERE id = ?", (txn["investment_id"],)).fetchone() is None:
+            raise ValueError("That holding no longer exists — restore the holding first.")
+        if conn.execute(
+            "SELECT 1 FROM transactions WHERE investment_id = ? AND fingerprint = ?",
+            (txn["investment_id"], txn["fingerprint"]),
+        ).fetchone():
+            raise ValueError("This trade is already back on the holding.")
+        _insert_row(conn, "transactions", txn)
+        holding = conn.execute("SELECT name FROM investments WHERE id = ?", (txn["investment_id"],)).fetchone()
+        return f"a trade on {holding['name']}"
+
+    if entity == "income":
+        income = dict(payload["income"])
+        if conn.execute("SELECT 1 FROM investments WHERE id = ?", (income["investment_id"],)).fetchone() is None:
+            raise ValueError("That holding no longer exists — restore the holding first.")
+        if income.get("source_ref") and conn.execute(
+            "SELECT 1 FROM incomes WHERE source_ref = ?", (income["source_ref"],)
+        ).fetchone():
+            income["source_ref"] = None
+        _insert_row(conn, "incomes", income)
+        for action_id in payload.get("corporate_links") or []:
+            conn.execute("UPDATE corporate_actions SET income_id = ? WHERE id = ?", (income["id"], action_id))
+        holding = conn.execute("SELECT name FROM investments WHERE id = ?", (income["investment_id"],)).fetchone()
+        return f"an income entry for {holding['name']}"
+
+    if entity == "demat":
+        account = dict(payload["account"])
+        if _owner_missing(conn, account.get("owner_id")):
+            raise ValueError("The member who owned this demat account no longer exists.")
+        clash = conn.execute(
+            "SELECT 1 FROM demat_accounts WHERE owner_id = ? AND client_id = ? COLLATE NOCASE",
+            (account["owner_id"], account["client_id"]),
+        ).fetchone()
+        if clash:
+            raise ValueError("That client ID is already saved for this member.")
+        _insert_row(conn, "demat_accounts", account)
+        return f"demat account {account['client_id']}"
+
+    if entity == "member":
+        user = dict(payload["user"])
+        clash = conn.execute("SELECT 1 FROM users WHERE email = ? OR id = ?", (user["email"], user["id"])).fetchone()
+        if clash:
+            raise ValueError("A member with that email already exists.")
+        _insert_row(conn, "users", user)
+        return user["name"]
+
+    raise ValueError("That deleted record can't be restored.")
+
+
+def _trash_payload(row) -> dict:
+    try:
+        payload = json.loads(row["payload"] or "{}")
+    except (TypeError, ValueError):
+        payload = {}
+    return payload
+
+
+@bp.get("/trash")
+@admin_required
+def list_trash():
+    conn = db.get_db()
+    conn.execute("DELETE FROM trash WHERE deleted_at < ?", (_trash_cutoff(),))
+    conn.commit()
+    rows = db.query(
+        """SELECT t.*, u.name AS deleted_by_name FROM trash t
+           LEFT JOIN users u ON u.id = t.deleted_by
+           ORDER BY t.id DESC"""
+    )
+    return jsonify(
+        days=TRASH_DAYS,
+        items=[
+            {
+                "id": row["id"],
+                "entity": row["entity"],
+                "label": row["label"],
+                "detail": row["detail"] or "",
+                "deleted_at": row["deleted_at"],
+                "deleted_by": row["deleted_by_name"] or "",
+            }
+            for row in rows
+        ],
+    )
+
+
+@bp.post("/trash/<int:trash_id>/restore")
+@admin_required
+def restore_trash(trash_id: int):
+    actor = current_user()
+    row = db.query_one("SELECT * FROM trash WHERE id = ?", (trash_id,))
+    if row is None:
+        return jsonify(error="That deleted record is no longer available"), 404
+    conn = db.get_db()
+    now = db.now()
+    try:
+        label = _restore_item(conn, row["entity"], _trash_payload(row), now)
+    except ValueError as exc:
+        conn.rollback()
+        return jsonify(error=str(exc)), 409
+    except Exception:  # noqa: BLE001 - a clash in any unique index
+        conn.rollback()
+        return jsonify(error="That record clashes with something already saved in the portfolio."), 409
+    conn.execute("DELETE FROM trash WHERE id = ?", (trash_id,))
+    conn.commit()
+    db.log_activity(actor["id"], "restored", f"Restored {label}", row["entity"], None)
+    return jsonify(ok=True, label=label)
+
+
+@bp.delete("/trash/<int:trash_id>")
+@admin_required
+def purge_trash(trash_id: int):
+    actor = current_user()
+    row = db.query_one("SELECT * FROM trash WHERE id = ?", (trash_id,))
+    if row is None:
+        return jsonify(error="That deleted record is no longer available"), 404
+    db.execute("DELETE FROM trash WHERE id = ?", (trash_id,))
+    db.log_activity(actor["id"], "deleted", f"Permanently deleted a trashed {row['entity']}", None, None)
+    return jsonify(ok=True)
+
+
 @bp.delete("/members/<int:member_id>")
 @admin_required
 def delete_member(member_id: int):
@@ -583,9 +796,14 @@ def delete_member(member_id: int):
         admins = db.query_one("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'")["c"]
         if admins <= 1:
             return jsonify(error="Keep at least one admin in the workspace"), 409
-    db.execute("DELETE FROM users WHERE id = ?", (member_id,))
+    conn = db.get_db()
+    trash_id = _move_to_trash(
+        conn, "member", existing["name"], {"user": _rowdict(existing)}, actor["id"], detail=existing["email"]
+    )
+    conn.execute("DELETE FROM users WHERE id = ?", (member_id,))
+    conn.commit()
     db.log_activity(actor["id"], "deleted", f"Removed member {existing['name']}", "member", member_id)
-    return jsonify(ok=True)
+    return jsonify(ok=True, trash_id=trash_id, label=existing["name"])
 
 
 # ---------------------------------------------------------------- demat master
@@ -689,9 +907,17 @@ def delete_demat_account(account_id: int):
             used.append(row)
     if used:
         return jsonify(error=f"{len(used)} holding(s) use this demat account. Edit them first."), 409
-    db.execute("DELETE FROM demat_accounts WHERE id = ?", (account_id,))
+    conn = db.get_db()
+    owner = db.query_one("SELECT name FROM users WHERE id = ?", (existing["owner_id"],))
+    label = f"{existing['broker']} · {existing['client_id']}"
+    trash_id = _move_to_trash(
+        conn, "demat", label, {"account": _rowdict(existing)}, actor["id"],
+        detail=owner["name"] if owner else "",
+    )
+    conn.execute("DELETE FROM demat_accounts WHERE id = ?", (account_id,))
+    conn.commit()
     db.log_activity(actor["id"], "deleted", "Removed a demat account", "demat", account_id)
-    return jsonify(ok=True)
+    return jsonify(ok=True, trash_id=trash_id, label=label)
 
 
 # ---------------------------------------------------------------- IFSC
@@ -1552,11 +1778,19 @@ def delete_transaction(txn_id: int):
     row = db.query_one("SELECT * FROM transactions WHERE id = ?", (txn_id,))
     if row is None:
         return jsonify(error="Transaction not found"), 404
-    db.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
     item = db.query_one("SELECT name FROM investments WHERE id = ?", (row["investment_id"],))
     name = item["name"] if item else "a holding"
+    detail = " ".join(
+        str(part) for part in (row["kind"], row["trade_date"]) if part
+    ) or None
+    conn = db.get_db()
+    trash_id = _move_to_trash(
+        conn, "transaction", name, {"transaction": _rowdict(row)}, actor["id"], detail=detail or ""
+    )
+    conn.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
+    conn.commit()
     db.log_activity(actor["id"], "deleted", f"Removed a transaction from {name}", "investment", row["investment_id"])
-    return jsonify(ok=True, investment_id=row["investment_id"])
+    return jsonify(ok=True, investment_id=row["investment_id"], trash_id=trash_id, label=name)
 
 
 @bp.post("/investments")
@@ -1621,9 +1855,15 @@ def delete_investment(item_id: int):
     existing = db.query_one("SELECT name FROM investments WHERE id = ?", (item_id,))
     if existing is None:
         return jsonify(error="Investment not found"), 404
-    db.execute("DELETE FROM investments WHERE id = ?", (item_id,))
+    conn = db.get_db()
+    snap = _snapshot_investment(conn, item_id)
+    trash_id = _move_to_trash(
+        conn, "investment", snap["label"], snap["payload"], actor["id"], detail=snap["detail"]
+    )
+    conn.execute("DELETE FROM investments WHERE id = ?", (item_id,))
+    conn.commit()
     db.log_activity(actor["id"], "deleted", f"Deleted {existing['name']}", "investment", item_id)
-    return jsonify(ok=True)
+    return jsonify(ok=True, trash_id=trash_id, label=existing["name"])
 
 
 @bp.post("/investments/bulk-delete")
@@ -1650,14 +1890,24 @@ def bulk_delete_investments():
     rows = db.query(f"SELECT id, name FROM investments WHERE id IN ({placeholders})", ids)
     if not rows:
         return jsonify(error="Those holdings no longer exist"), 404
-    db.execute(f"DELETE FROM investments WHERE id IN ({placeholders})", ids)
+    conn = db.get_db()
+    trash_ids = []
+    for row in rows:
+        snap = _snapshot_investment(conn, row["id"])
+        trash_ids.append(
+            _move_to_trash(
+                conn, "investment", snap["label"], snap["payload"], actor["id"], detail=snap["detail"]
+            )
+        )
+        conn.execute("DELETE FROM investments WHERE id = ?", (row["id"],))
+    conn.commit()
     names = [row["name"] for row in rows]
     preview = ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
     db.log_activity(
         actor["id"], "deleted",
         f"Deleted {len(rows)} holding(s): {preview}", "investment", None,
     )
-    return jsonify(deleted=len(rows), ids=[row["id"] for row in rows])
+    return jsonify(deleted=len(rows), ids=[row["id"] for row in rows], trash_ids=trash_ids)
 
 
 @bp.post("/investments/bulk-broker")
@@ -1842,13 +2092,26 @@ def delete_income(income_id: int):
     existing = _income_row(income_id)
     if existing is None:
         return jsonify(error="Income entry not found"), 404
-    db.execute("UPDATE corporate_actions SET income_id = NULL WHERE income_id = ?", (income_id,))
-    db.execute("DELETE FROM incomes WHERE id = ?", (income_id,))
+    raw = db.query_one("SELECT * FROM incomes WHERE id = ?", (income_id,))
+    links = [
+        row["id"] for row in
+        db.query("SELECT id FROM corporate_actions WHERE income_id = ?", (income_id,))
+    ]
+    conn = db.get_db()
+    when = existing["credited_date"] or existing["due_date"] or ""
+    trash_id = _move_to_trash(
+        conn, "income", existing["investment_name"],
+        {"income": _rowdict(raw), "corporate_links": links}, actor["id"],
+        detail=" · ".join(part for part in (existing["kind"], when) if part),
+    )
+    conn.execute("UPDATE corporate_actions SET income_id = NULL WHERE income_id = ?", (income_id,))
+    conn.execute("DELETE FROM incomes WHERE id = ?", (income_id,))
+    conn.commit()
     db.log_activity(
         actor["id"], "deleted",
         f"Deleted an income entry for {existing['investment_name']}", "income", income_id,
     )
-    return jsonify(ok=True)
+    return jsonify(ok=True, trash_id=trash_id, label=existing["investment_name"])
 
 
 # ---------------------------------------------------------------- corporate actions
@@ -2115,6 +2378,44 @@ def import_preview():
     )
 
 
+@bp.post("/import/custom")
+@admin_required
+def import_custom_debt():
+    """Read a family's own debt sheet (deposits, bonds, PPF, small savings)."""
+    actor = current_user()
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify(error="Choose your Excel file to upload"), 400
+    if not upload.filename.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify(error="Upload the sheet as .xlsx"), 400
+    members = [
+        {"id": m["id"], "name": m["name"], "email": m["email"]}
+        for m in services.member_totals()
+    ]
+    blob = upload.read()
+    if not blob:
+        return jsonify(error="That file is empty. Choose the filled sheet again."), 400
+    existing, existing_serial, _lookup, _by_id = _existing_identity()
+    existing_fallback = {
+        (
+            row["owner_id"], row["type"], (row["name"] or "").strip().lower(),
+            round(float(row["invested_amount"] or 0), 2), row["start_date"] or "",
+        )
+        for row in db.query(
+            """SELECT owner_id, type, name, invested_amount, start_date FROM investments
+               WHERE type IN ('fd', 'rd', 'bonds', 'ppf', 'small_savings')"""
+        )
+    }
+    try:
+        preview_rows, payloads, warnings = debtio.parse_debt_workbook(
+            BytesIO(blob), members, _form_owner_id(), existing, existing_serial,
+            existing_fallback,
+        )
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 422
+    return _start_import(actor, preview_rows, payloads, warnings, upload.filename, "custom")
+
+
 @bp.post("/import/broker")
 @admin_required
 def import_broker():
@@ -2222,6 +2523,9 @@ def import_commit():
     for entry in store.get("rows", []):
         if not entry.get("valid"):
             skipped += 1
+            continue
+        if entry.get("duplicate"):
+            duplicates += 1
             continue
         data, errors = fields.validate_investment(entry["payload"])
         if errors or not _owner_exists(data.get("owner_id")):

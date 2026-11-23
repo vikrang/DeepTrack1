@@ -426,17 +426,26 @@ function categoryMeta(key) {
    Toasts, modal, drawer
    ============================================================ */
 
-function toast(message, kind = "info") {
+function toast(message, kind = "info", action = null) {
   const root = $("#toast-root");
   const node = document.createElement("div");
-  node.className = `toast ${kind}`;
+  node.className = `toast ${kind}${action ? " has-action" : ""}`;
   const icons = { ok: "checkCircle", error: "xCircle", warn: "alert", info: "info" };
-  node.innerHTML = `${icon(icons[kind] || "info")}<span>${esc(message)}</span>`;
+  node.innerHTML = `${icon(icons[kind] || "info")}<span>${esc(message)}</span>${
+    action ? `<button class="toast-action" type="button">${esc(action.label)}</button>` : ""
+  }`;
   root.appendChild(node);
+  if (action) {
+    node.querySelector(".toast-action")?.addEventListener("click", () => {
+      action.run();
+      node.classList.add("leaving");
+      setTimeout(() => node.remove(), 220);
+    });
+  }
   setTimeout(() => {
     node.classList.add("leaving");
     setTimeout(() => node.remove(), 220);
-  }, kind === "error" ? 6000 : 3800);
+  }, kind === "error" ? 6000 : action ? 9000 : 3800);
 }
 
 function openModal({ title, subtitle = "", body, footer = "", size = "", onMount }) {
@@ -1467,8 +1476,132 @@ function renderActivity() {
             : `<span class="muted">Start of the log</span>`}
         </div>
       </section>
+      ${isAdmin() ? trashCard() : ""}
     </div>`;
   hydrateIcons(view);
+}
+
+const TRASH_LABELS = {
+  investment: "Holding",
+  transaction: "Trade",
+  income: "Income entry",
+  demat: "Demat account",
+  member: "Member",
+};
+
+function trashCard() {
+  const trash = state.trash;
+  if (!trash) {
+    return `<section class="card card-pad span-12">
+      <div class="card-head"><div><div class="card-title">Recently deleted</div>
+      <div class="card-sub">Restore anything removed in the last 30 days</div></div></div>
+      <div class="skeleton" style="height:70px"></div>
+    </section>`;
+  }
+  const items = trash.items || [];
+  return `
+    <section class="card card-pad span-12">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Recently deleted</div>
+          <div class="card-sub">Restore anything removed in the last ${trash.days} days · ${items.length} item${items.length === 1 ? "" : "s"}</div>
+        </div>
+      </div>
+      ${items.length ? `<div class="table-wrap">
+        <table class="mini-table activity-table">
+          <thead><tr><th>Deleted</th><th>What</th><th style="text-align:right">Actions</th></tr></thead>
+          <tbody>
+            ${items.map((item) => `
+              <tr>
+                <td>
+                  <div class="cell-name">${fmtDateTime(item.deleted_at)}</div>
+                  <div class="cell-sub">${timeAgo(item.deleted_at)}${item.deleted_by ? ` · ${esc(item.deleted_by)}` : ""}</div>
+                </td>
+                <td>
+                  <div class="cell-name">${esc(item.label)}</div>
+                  <div class="cell-sub">${esc(TRASH_LABELS[item.entity] || item.entity)}${item.detail ? ` · ${esc(item.detail)}` : ""}</div>
+                </td>
+                <td style="white-space:nowrap;text-align:right">
+                  <button class="btn btn-secondary btn-sm" type="button" data-action="trash-restore" data-trash-id="${item.id}">${icon("refresh")} Restore</button>
+                  <button class="btn btn-ghost btn-sm" type="button" data-action="trash-purge" data-trash-id="${item.id}">Delete forever</button>
+                </td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>` : `<p class="muted" style="font-size:13px;padding:6px 0 2px">Nothing deleted recently. Removed holdings, trades, income entries, demat accounts and members wait here so a wrong click can be put right.</p>`}
+    </section>`;
+}
+
+function undoAction(trashIds) {
+  const ids = (Array.isArray(trashIds) ? trashIds : [trashIds]).filter(Boolean);
+  if (!ids.length) return null;
+  return {
+    label: "Undo",
+    run: async () => {
+      let restored = 0;
+      let problem = "";
+      for (const trashId of ids) {
+        try {
+          await api(`/trash/${trashId}/restore`, { method: "POST" });
+          restored += 1;
+        } catch (error) {
+          problem = error.message;
+        }
+      }
+      if (restored) {
+        toast(`${restored} record${restored === 1 ? "" : "s"} restored`, "ok");
+        state.trash = null;
+        await refreshAndRender();
+        if (state.view === "activity") await loadActivity(true);
+      }
+      if (problem) toast(problem, "error");
+    },
+  };
+}
+
+async function restoreTrashItem(trashId) {
+  try {
+    const result = await api(`/trash/${trashId}/restore`, { method: "POST" });
+    toast(`Restored ${result.label || "the record"}`, "ok");
+    state.activity = null;
+    await refreshData();
+    await loadActivity(true);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function purgeTrashItem(trashId) {
+  const item = (state.trash?.items || []).find((t) => t.id === trashId);
+  const ok = await confirmDialog({
+    title: "Delete permanently?",
+    message: item
+      ? `<strong>${esc(item.label)}</strong> (${esc((TRASH_LABELS[item.entity] || item.entity).toLowerCase())}) will be gone for good. This cannot be undone.`
+      : "This record will be gone for good. This cannot be undone.",
+    confirmLabel: "Delete forever",
+  });
+  if (!ok) return;
+  try {
+    await api(`/trash/${trashId}`, { method: "DELETE" });
+    toast("Deleted for good", "ok");
+    state.trash = null;
+    await loadTrash();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function loadTrash() {
+  if (!isAdmin() || state.trashLoading) return;
+  state.trashLoading = true;
+  try {
+    state.trash = await api("/trash");
+    if (state.view === "activity") renderActivity();
+  } catch (error) {
+    state.trash = state.trash || { days: 30, items: [] };
+  } finally {
+    state.trashLoading = false;
+  }
 }
 
 async function loadActivity(reset = false) {
@@ -1485,6 +1618,7 @@ async function loadActivity(reset = false) {
       state.activity.has_more = data.has_more;
     }
     if (state.view === "activity") renderActivity();
+    if (isAdmin()) loadTrash();
   } catch (error) {
     toast(error.message, "error");
     if (state.view === "activity" && state.activity) renderActivity();
@@ -1687,8 +1821,8 @@ async function deleteIncomeEntry(id) {
   });
   if (!ok) return;
   try {
-    await api(`/incomes/${id}`, { method: "DELETE" });
-    toast("Income entry deleted", "ok");
+    const result = await api(`/incomes/${id}`, { method: "DELETE" });
+    toast("Income entry deleted — 30 days in Recently deleted", "ok", undoAction(result?.trash_id));
     await refreshDashboard();
   } catch (error) {
     toast(error.message, "error");
@@ -3491,14 +3625,14 @@ async function deleteInvestment(id) {
   if (!item) return;
   const ok = await confirmDialog({
     title: "Delete this holding?",
-    message: `<strong>${esc(item.name)}</strong> will be removed from the portfolio. This cannot be undone.`,
+    message: `<strong>${esc(item.name)}</strong> moves to Recently deleted on the Activity page, where you can restore it for 30 days.`,
     confirmLabel: "Delete holding",
   });
   if (!ok) return;
   try {
-    await api(`/investments/${id}`, { method: "DELETE" });
+    const result = await api(`/investments/${id}`, { method: "DELETE" });
     closeDrawer();
-    toast("Holding deleted", "ok");
+    toast("Holding deleted — 30 days in Recently deleted", "ok", undoAction(result?.trash_id));
     await refreshAndRender();
   } catch (error) {
     toast(error.message, "error");
@@ -3510,7 +3644,7 @@ async function bulkDeleteInvestments() {
   if (!ids.length) return;
   const ok = await confirmDialog({
     title: `Delete ${ids.length} holding${ids.length === 1 ? "" : "s"}?`,
-    message: `<strong>${ids.length}</strong> selected holding${ids.length === 1 ? "" : "s"} will be removed from the portfolio. This cannot be undone.`,
+    message: `<strong>${ids.length}</strong> selected holding${ids.length === 1 ? "" : "s"} move to Recently deleted on the Activity page, where you can restore them for 30 days.`,
     confirmLabel: `Delete ${ids.length}`,
   });
   if (!ok) return;
@@ -3518,7 +3652,11 @@ async function bulkDeleteInvestments() {
     const result = await api("/investments/bulk-delete", { method: "POST", body: { ids } });
     state.selected.clear();
     closeDrawer();
-    toast(`Deleted ${result.deleted} holding${result.deleted === 1 ? "" : "s"}`, "ok");
+    toast(
+      `Deleted ${result.deleted} holding${result.deleted === 1 ? "" : "s"} — 30 days in Recently deleted`,
+      "ok",
+      undoAction(result?.trash_ids),
+    );
     await refreshAndRender();
   } catch (error) {
     toast(error.message, "error");
@@ -3884,13 +4022,13 @@ async function deleteMember(id) {
   if (!member) return;
   const ok = await confirmDialog({
     title: "Remove this member?",
-    message: `<strong>${esc(member.name)}</strong> will lose access. Holdings they own must be reassigned first.`,
+    message: `<strong>${esc(member.name)}</strong> will lose access and move to Recently deleted, where an admin can restore them for 30 days. Holdings they own must be reassigned first.`,
     confirmLabel: "Remove member",
   });
   if (!ok) return;
   try {
-    await api(`/members/${id}`, { method: "DELETE" });
-    toast("Member removed", "ok");
+    const result = await api(`/members/${id}`, { method: "DELETE" });
+    toast("Member removed — 30 days in Recently deleted", "ok", undoAction(result?.trash_id));
     await refreshAndRender();
   } catch (error) {
     toast(error.message, "error");
@@ -4101,13 +4239,13 @@ async function deleteDematAccount(id) {
   if (!account) return;
   const ok = await confirmDialog({
     title: "Remove this demat account?",
-    message: `<strong>${esc(account.display)}</strong> will disappear from the dropdown. Holdings keep their broker details.`,
+    message: `<strong>${esc(account.display)}</strong> will disappear from the dropdown and move to Recently deleted for 30 days. Holdings keep their broker details.`,
     confirmLabel: "Remove account",
   });
   if (!ok) return;
   try {
-    await api(`/demat-accounts/${id}`, { method: "DELETE" });
-    toast("Demat account removed", "ok");
+    const result = await api(`/demat-accounts/${id}`, { method: "DELETE" });
+    toast("Demat account removed — restore from Activity for 30 days", "ok", undoAction(result?.trash_id));
     await refreshAndRender();
   } catch (error) {
     toast(error.message, "error");
@@ -4557,7 +4695,7 @@ function renderImport() {
       <label class="field" style="max-width:340px;margin-bottom:14px">
         <span>Owner for rows with no Owner column</span>
         <select id="import-owner">${importOwnerOptions()}</select>
-        <span class="help">Rows that already name an owner keep theirs. Without this, rows with no owner stay unimported until you pick one.</span>
+        <span class="help">Rows that already name an owner keep theirs. Everything else — for example a family member's sheet with no Name column — goes to this owner, so pick that member before dropping the file.</span>
       </label>
       <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload Excel workbook">
         <div class="dz-icon">${icon("upload")}</div>
@@ -4568,12 +4706,31 @@ function renderImport() {
       <input type="file" id="import-file" accept=".xlsx,.xlsm" class="hidden">
     </section>
 
+    <section class="card card-pad" style="margin-bottom:18px">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Import your own debt sheet</div>
+          <div class="card-sub">FDs, RDs, bonds, PPF and post office schemes — one row per deposit</div>
+        </div>
+        <span class="pill pill-muted">Your layout</span>
+      </div>
+      <div class="dropzone" id="debt-dropzone" tabindex="0" role="button" aria-label="Upload deposit sheet">
+        <div class="dz-icon">${icon("upload")}</div>
+        <h4>Drop your deposit sheet here</h4>
+        <p>or click to browse files</p>
+        <span class="file-hint">.xlsx with Category, Deposit, Deposit date, Rate, Maturity date and Deposit amount columns</span>
+      </div>
+      <input type="file" id="debt-file" accept=".xlsx,.xlsm" class="hidden">
+      <p class="muted small" style="margin:10px 0 0">Each row becomes an FD, RD, bond, PPF or small savings holding based on its category. Rows that name a member keep that owner; the rest go to the owner chosen above. Rows that can't be read (a missing rate, an RD without a monthly amount) are listed in the preview, and a re-upload skips what is already saved.</p>
+    </section>
+
     <div id="import-preview">${preview ? importPreviewHtml(preview) : ""}</div>
   `;
   hydrateIcons($("#view"));
   wireDropzone();
   wireBrokerDropzone();
   wireStatementDropzone();
+  wireDropzone("debt-dropzone", "debt-file", uploadDebtSheet);
   $("#import-update-existing")?.addEventListener("change", (event) => {
     state.importUpdateExisting = event.target.checked;
   });
@@ -4834,6 +4991,38 @@ async function uploadBroker(file) {
   }
 }
 
+async function uploadDebtSheet(file) {
+  if (!/\.(xlsx|xlsm)$/i.test(file.name)) {
+    toast("Upload the sheet as .xlsx", "error");
+    return;
+  }
+  const zone = $("#debt-dropzone");
+  zone?.classList.add("busy");
+  if (zone) {
+    zone.querySelector("h4").textContent = "Reading your deposit sheet…";
+    zone.querySelector("p").textContent = file.name;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  const ownerId = $("#import-owner")?.value || "";
+  if (ownerId) form.append("owner_id", ownerId);
+  try {
+    const data = await api("/import/custom", { method: "POST", form });
+    state.importPreview = data;
+    state.importResult = null;
+    renderImport();
+    $("#import-preview")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    toast(`${data.valid} of ${data.rows} deposit rows ready to import`, data.invalid ? "warn" : "ok");
+  } catch (error) {
+    toast(error.message, "error");
+    zone?.classList.remove("busy");
+    if (zone) {
+      zone.querySelector("h4").textContent = "Drop your deposit sheet here";
+      zone.querySelector("p").textContent = "or click to browse files";
+    }
+  }
+}
+
 function pickTransactionFile(id) {
   const input = $(`#txn-file-${id}`);
   if (!input) return;
@@ -4942,8 +5131,8 @@ async function deleteTransactionEntry(transactionId, investmentId) {
   const ok = await confirmDialog({ title: "Remove this transaction?", message });
   if (!ok) return;
   try {
-    await api(`/transactions/${transactionId}`, { method: "DELETE" });
-    toast("Transaction removed", "ok");
+    const result = await api(`/transactions/${transactionId}`, { method: "DELETE" });
+    toast("Transaction removed — restore from Activity for 30 days", "ok", undoAction(result?.trash_id));
     await refreshData();
     openInvestmentDrawer(investmentId);
   } catch (error) {
@@ -5270,7 +5459,14 @@ async function handleClick(event) {
       break;
     case "activity-refresh":
       state.activity = null;
+      state.trash = null;
       await loadActivity(true);
+      break;
+    case "trash-restore":
+      await restoreTrashItem(Number(actionEl.dataset.trashId));
+      break;
+    case "trash-purge":
+      await purgeTrashItem(Number(actionEl.dataset.trashId));
       break;
     case "delete-income":
       await deleteIncomeEntry(id);

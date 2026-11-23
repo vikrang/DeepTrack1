@@ -20,7 +20,7 @@ import threading
 from . import db
 
 # Tables that hold the family's real data, in dependency order for restore.
-CORE_TABLES = ("users", "investments", "demat_accounts", "activity")
+CORE_TABLES = ("users", "investments", "demat_accounts", "activity", "trash")
 
 # Column whitelist per table (matches db.SCHEMA). Guards the restore against any
 # unexpected keys and keeps the INSERT column list explicit.
@@ -41,10 +41,14 @@ COLUMNS = {
     "activity": (
         "id", "user_id", "action", "summary", "entity_type", "entity_id", "created_at",
     ),
+    "trash": (
+        "id", "entity", "label", "detail", "payload", "deleted_by", "deleted_at",
+    ),
 }
 
 COLLECTION = "deeptrack_sync"
 ACTIVITY_LIMIT = 500
+TRASH_CLOUD_LIMIT = 100
 SCHEMA_VERSION = 1
 
 _state = {"client": None, "app": None, "synced_at": None, "last_error": None}
@@ -119,6 +123,8 @@ def _serialize(conn) -> dict:
         rows = [dict(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY id")]
         if table == "activity":
             rows = rows[-ACTIVITY_LIMIT:]
+        elif table == "trash":
+            rows = rows[-TRASH_CLOUD_LIMIT:]
         data[table] = rows
     return data
 
