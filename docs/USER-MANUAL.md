@@ -369,6 +369,10 @@ that's what feeds the Dashboard's *Monthly SIPs* card.
 **Fixed deposits (FD)** — the most common. Enter **Bank / NBFC**, **Principal deposited**,
 **Interest rate**, and the **Tenor** (years / months / days). Pick **Interest frequency**
 (defaults to Quarterly, which most Indian banks use) and **Type** (Fixed or Cumulative).
+> With **Type = Cumulative** the **Interest frequency** box is disabled — interest is not
+> paid periodically, it compounds and is paid with the maturity amount. Switch to **Fixed**
+> to choose how often the bank credits interest.
+
 > DeepTrack calculates the **Maturity date** and **Maturity amount** for you — leave them
 > blank. If your bank statement only shows a maturity date, type that and leave the tenor blank.
 
@@ -450,6 +454,15 @@ The **Investments** page ("Every holding in one ledger") is a searchable list.
 - **Sort dropdown** — **Recently updated**, **Highest value**, **Highest gain**,
   **Most invested**, **Name A–Z**, **Purchase date**. You can also click a column header
   to sort by it (an arrow ↑/↓ shows the direction).
+
+**The columns:**
+
+| Column | What it shows |
+| --- | --- |
+| **Invested** | The money you put in. |
+| **Current** | What the holding is worth today. For cumulative deposits, bonds without a coupon frequency and accrued instruments it is **principal + interest accrued to date** (marked *incl. accrued interest*); for deposits and bonds that pay interest out periodically it is the **principal only** (marked *interest paid out*), because the interest has already left the deposit. Values accrue by themselves from the saved rate and dates — no refetch needed. |
+| **Maturity** | The maturity date from the holding's details; "—" for holdings that don't mature. Click the row to open the drawer. |
+| **Gain** | Current minus invested, shown **unrounded to the paise**, with a ▲/▼ trend icon and the percentage beside it. |
 
 The footer totals what you're looking at: *"Showing N of M holdings · Invested ₹X ·
 Value ₹Y · Gain ±₹Z."*
@@ -894,7 +907,7 @@ address from every device.
 | **Owner** | The member a holding belongs to. |
 | **Admin / Viewer** | The two roles: Admin edits, Viewer reads. |
 | **Invested** | The money you actually put in. |
-| **Current value** | What it's worth today. |
+| **Current value** | What it's worth today. For cumulative deposits and bonds it includes interest accrued to date; for periodic-payout instruments it is the principal, since the interest has been paid out. |
 | **Unrealised gain** | Current value minus invested — a paper gain, not yet sold. |
 | **SIP** | Systematic Investment Plan — a fixed monthly mutual-fund investment. |
 | **NAV** | Net Asset Value — the per-unit price of a mutual fund. |

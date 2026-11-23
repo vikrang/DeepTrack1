@@ -900,6 +900,10 @@ img { display: block; }
 .estimate-deferred-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800; color: var(--muted); margin-bottom: 2px; }
 .estimate-deferred .estimate-row { padding: 7px 6px; }
 .estimate-deferred .estimate-name { font-weight: 650; color: var(--ink-2); }
+.gain-cell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+.gain-num { font-weight: 650; font-variant-numeric: tabular-nums; }
+.gain-meta { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.field.is-locked select { opacity: 0.55; cursor: not-allowed; background: var(--surface-2); }
 
 .activity-table td { vertical-align: top; }
 .activity-table tbody tr { cursor: default; }

@@ -85,6 +85,11 @@ def investment_payload(row) -> dict:
     current = float(data.get("current_value") or 0)
     gain = current - invested
     gain_pct = (gain / invested * 100) if invested else 0.0
+    effective, value_note = fields.effective_value(
+        data.get("type"), details, invested, current, data.get("start_date")
+    )
+    display = current if effective is None else float(effective)
+    display_gain = display - invested
     type_meta = fields.TYPES.get(data.get("type"), {})
     category = CATEGORY_MAP.get(data.get("category"), {})
     return {
@@ -102,6 +107,11 @@ def investment_payload(row) -> dict:
         "current_value": current,
         "gain": round(gain, 2),
         "gain_pct": round(gain_pct, 2),
+        "display_value": round(display, 2),
+        "display_gain": round(display_gain, 2),
+        "display_gain_pct": round(display_gain / invested * 100, 2) if invested else 0.0,
+        "value_note": value_note,
+        "maturity_date": str(details.get("maturity_date") or ""),
         "start_date": data.get("start_date") or "",
         "notes": data.get("notes") or "",
         "broker": str(details.get("broker") or "").strip(),
@@ -116,18 +126,25 @@ def member_totals() -> list[dict]:
         """
         SELECT u.id, u.name, u.email, u.role, u.pan, u.aadhaar, u.phone, u.dob, u.address,
                u.bank_name, u.bank_branch, u.ifsc, u.account_number, u.account_type,
-               u.created_at, u.is_active,
-               COUNT(i.id) AS holdings,
-               COALESCE(SUM(i.invested_amount), 0) AS invested,
-               COALESCE(SUM(i.current_value), 0) AS value
+               u.created_at, u.is_active
         FROM users u
-        LEFT JOIN investments i ON i.owner_id = u.id
         WHERE u.is_active = 1
-        GROUP BY u.id
         ORDER BY u.name COLLATE NOCASE
         """
     )
-    return [dict(r) for r in rows]
+    totals: dict[int, dict] = {}
+    for r in db.query("SELECT * FROM investments"):
+        item = investment_payload(r)
+        bucket = totals.setdefault(item["owner_id"], {"holdings": 0, "invested": 0.0, "value": 0.0})
+        bucket["holdings"] += 1
+        bucket["invested"] += item["invested_amount"]
+        bucket["value"] += item["display_value"]
+    result = []
+    for row in rows:
+        entry = dict(row)
+        entry.update(totals.get(entry["id"], {"holdings": 0, "invested": 0.0, "value": 0.0}))
+        result.append(entry)
+    return result
 
 
 def members_with_totals(viewer) -> list[dict]:
@@ -626,7 +643,7 @@ def dashboard() -> dict:
     )
     items = [investment_payload(r) for r in rows]
     invested = round(sum(i["invested_amount"] for i in items), 2)
-    current = round(sum(i["current_value"] for i in items), 2)
+    current = round(sum(i["display_value"] for i in items), 2)
     gain = round(current - invested, 2)
     gain_pct = round((gain / invested * 100), 2) if invested else 0.0
 
@@ -634,7 +651,7 @@ def dashboard() -> dict:
     for cat in fields.CATEGORIES:
         subset = [i for i in items if i["category"] == cat["key"]]
         cat_invested = round(sum(i["invested_amount"] for i in subset), 2)
-        cat_current = round(sum(i["current_value"] for i in subset), 2)
+        cat_current = round(sum(i["display_value"] for i in subset), 2)
         categories.append({
             "key": cat["key"],
             "label": cat["label"],
@@ -659,7 +676,7 @@ def dashboard() -> dict:
         })
         bucket["count"] += 1
         bucket["invested"] += item["invested_amount"]
-        bucket["value"] += item["current_value"]
+        bucket["value"] += item["display_value"]
     types = sorted(type_rows.values(), key=lambda t: t["value"], reverse=True)
     for t in types:
         t["invested"] = round(t["invested"], 2)
@@ -678,7 +695,7 @@ def dashboard() -> dict:
         })
         bucket["count"] += 1
         bucket["invested"] += item["invested_amount"]
-        bucket["value"] += item["current_value"]
+        bucket["value"] += item["display_value"]
     owner_rows = sorted(owners.values(), key=lambda o: o["value"], reverse=True)
     for o in owner_rows:
         o["invested"] = round(o["invested"], 2)
@@ -703,7 +720,7 @@ def dashboard() -> dict:
         })
         bucket["count"] += 1
         bucket["invested"] += item["invested_amount"]
-        bucket["value"] += item["current_value"]
+        bucket["value"] += item["display_value"]
     broker_list = sorted(broker_rows.values(), key=lambda b: b["value"], reverse=True)
     for b in broker_list:
         b["invested"] = round(b["invested"], 2)
@@ -734,12 +751,12 @@ def dashboard() -> dict:
                 "owner": item["owner"],
                 "date": raw,
                 "days": (due - today).days,
-                "value": item["current_value"],
+                "value": item["display_value"],
             })
     maturities.sort(key=lambda m: m["date"])
 
-    top_gainers = sorted(items, key=lambda i: i["gain"], reverse=True)[:5]
-    top_holdings = sorted(items, key=lambda i: i["current_value"], reverse=True)[:6]
+    top_gainers = sorted(items, key=lambda i: i["display_gain"], reverse=True)[:5]
+    top_holdings = sorted(items, key=lambda i: i["display_value"], reverse=True)[:6]
 
     fy_end = current_fiscal_year()
     fy_start = date(fy_end - 1, 4, 1).isoformat()
@@ -774,14 +791,16 @@ def dashboard() -> dict:
         "untagged_broker_count": untagged_broker_count,
         "top_gainers": [
             {**{k: i[k] for k in ("id", "name", "type", "type_label", "owner", "broker", "invested_amount",
-                                  "current_value", "gain", "gain_pct", "category_color")},
+                                  "display_value", "display_gain", "display_gain_pct", "value_note",
+                                  "category_color")},
              "symbol": (i.get("details") or {}).get("symbol", ""),
              "issuer": issuer_name(i)}
             for i in top_gainers
         ],
         "top_holdings": [
-            {**{k: i[k] for k in ("id", "name", "type", "type_label", "owner", "broker", "current_value",
-                                  "gain", "gain_pct", "category_color")},
+            {**{k: i[k] for k in ("id", "name", "type", "type_label", "owner", "broker", "display_value",
+                                  "display_gain", "display_gain_pct", "value_note", "maturity_date",
+                                  "category_color")},
              "symbol": (i.get("details") or {}).get("symbol", ""),
              "issuer": issuer_name(i)}
             for i in top_holdings

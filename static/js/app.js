@@ -860,6 +860,27 @@ function greeting() {
   return "Good evening";
 }
 
+const inrFull = (n) => {
+  const value = Number(n) || 0;
+  const paise = Math.abs(value - Math.round(value)) > 0.004;
+  return "₹" + nf(paise ? 2 : 0).format(value);
+};
+
+function gainCell(value, pct) {
+  const positive = value >= 0;
+  const color = positive ? "var(--ok)" : "var(--bad)";
+  return `<div class="gain-cell" style="color:${color}">
+    <span class="gain-num">${positive ? "+" : "−"}${inrFull(Math.abs(value))}</span>
+    <span class="gain-meta">${icon(positive ? "trendUp" : "trendDown", "sm")}${pctText(pct)}</span>
+  </div>`;
+}
+
+function valueNoteHtml(item) {
+  if (item.value_note === "principal + accrued interest") return `<div class="cell-sub">incl. accrued interest</div>`;
+  if (item.value_note === "principal only") return `<div class="cell-sub">interest paid out</div>`;
+  return "";
+}
+
 function gainPill(value, pct, compact = false) {
   const positive = value >= 0;
   const text = `${positive ? "+" : "−"}${compact ? compactMoney(Math.abs(value)) : inr(Math.abs(value))} (${pctText(pct)})`;
@@ -1504,7 +1525,7 @@ function holdingsCard(dash) {
                 <div class="cell-sub">${esc(h.type_label)}${h.broker ? ` · <span class="sub-broker">${brokerBadge(h.broker, "sm")}${esc(h.broker)}</span>` : ""}</div>
               </td>
               <td class="hide-sm" style="font-size:12px;color:var(--muted)">${esc(h.owner)}</td>
-              <td class="num">${inr(h.current_value)}<div class="cell-sub" style="color:${h.gain >= 0 ? "var(--ok)" : "var(--bad)"}">${pctText(h.gain_pct)}</div></td>
+              <td class="num">${inr(h.display_value)}<div class="cell-sub" style="color:${h.display_gain >= 0 ? "var(--ok)" : "var(--bad)"}">${pctText(h.display_gain_pct)}</div></td>
             </tr>`).join("")}
         </tbody>
       </table>` : `<p class="muted" style="font-size:13px">No holdings yet.</p>`}
@@ -1837,8 +1858,8 @@ function filteredInvestments() {
   const sorters = {
     name: (i) => i.name.toLowerCase(),
     invested: (i) => i.invested_amount,
-    current: (i) => i.current_value,
-    gain: (i) => i.gain,
+    current: (i) => i.display_value,
+    gain: (i) => i.display_gain,
     date: (i) => i.start_date || "",
     owner: (i) => i.owner.toLowerCase(),
     updated: (i) => i.updated_at || "",
@@ -1925,6 +1946,7 @@ function renderInvestments() {
               <th class="hide-sm sortable" data-action="sort" data-sort="owner">Owner ${sortIndicator("owner")}</th>
               <th class="num sortable" data-action="sort" data-sort="invested">Invested ${sortIndicator("invested")}</th>
               <th class="num sortable" data-action="sort" data-sort="current">Current ${sortIndicator("current")}</th>
+              <th class="hide-sm">Maturity</th>
               <th class="num sortable" data-action="sort" data-sort="gain">Gain ${sortIndicator("gain")}</th>
               <th class="actions-cell"></th>
             </tr>
@@ -1950,7 +1972,7 @@ function updateInvestmentsTable() {
   const body = $("#inv-body");
   if (!body) return;
   if (!items.length) {
-    body.innerHTML = `<tr><td colspan="${isAdmin() ? 8 : 7}">
+    body.innerHTML = `<tr><td colspan="${isAdmin() ? 9 : 8}">
       <div class="empty" style="padding:44px 16px">
         <div class="empty-icon">${icon("search")}</div>
         <h3>No holdings match</h3>
@@ -1959,7 +1981,7 @@ function updateInvestmentsTable() {
       </div>
     </td></tr>`;
   } else if (state.layout === "member") {
-    const cols = isAdmin() ? 8 : 7;
+    const cols = isAdmin() ? 9 : 8;
     body.innerHTML = investmentsByMember(items).map((group) => groupHtml(group, cols)).join("");
   } else {
     body.innerHTML = items.map((item) => investmentRowHtml(item)).join("");
@@ -1985,7 +2007,7 @@ function updateInvestmentsTable() {
   syncSelectionBar(items);
 
   const invested = items.reduce((s, i) => s + i.invested_amount, 0);
-  const current = items.reduce((s, i) => s + i.current_value, 0);
+  const current = items.reduce((s, i) => s + i.display_value, 0);
   const gain = current - invested;
   $("#inv-foot").innerHTML = `
     <span>Showing <strong>${items.length}</strong> of ${state.investments.length} holdings</span>
@@ -2012,8 +2034,9 @@ function investmentRowHtml(item) {
         </div>
       </td>
       <td class="num">${inr(item.invested_amount)}</td>
-      <td class="num">${inr(item.current_value)}</td>
-      <td class="num">${gainPill(item.gain, item.gain_pct, true)}</td>
+      <td class="num">${inr(item.display_value)}${valueNoteHtml(item)}</td>
+      <td class="hide-sm">${item.maturity_date ? fmtDate(item.maturity_date) : `<span class="muted">—</span>`}</td>
+      <td class="num">${gainCell(item.display_gain, item.display_gain_pct)}</td>
       <td class="actions-cell">
         ${admin ? `
           <button class="icon-btn" type="button" data-action="edit-investment" data-id="${item.id}" title="Edit ${esc(item.name)}" aria-label="Edit ${esc(item.name)}">${icon("edit", "sm")}</button>
@@ -2024,7 +2047,7 @@ function investmentRowHtml(item) {
 }
 
 function investmentCardHtml(item) {
-  const positive = item.gain >= 0;
+  const positive = item.display_gain >= 0;
   return `
     <article class="inv-card" data-investment-id="${item.id}" role="button" tabindex="0" aria-label="Open ${esc(item.name)}">
       <div class="inv-card-top">
@@ -2033,22 +2056,23 @@ function investmentCardHtml(item) {
           <span class="inv-card-type"><span class="cat-dot cat-${item.category}"></span>${esc(item.type_label)}</span>
         </div>
         <div class="inv-card-value">
-          <strong>${inr(item.current_value)}</strong>
-          <span class="pill ${positive ? "pill-ok" : "pill-bad"}">${pctText(item.gain_pct)}</span>
+          <strong>${inr(item.display_value)}</strong>
+          <span class="pill ${positive ? "pill-ok" : "pill-bad"}">${pctText(item.display_gain_pct)}</span>
         </div>
       </div>
       <div class="inv-card-meta">
         <span class="inv-card-owner">${avatar(item.owner, "sm")}${esc(item.owner)}</span>
         ${item.broker ? `<span class="inv-broker">${brokerBadge(item.broker)}${esc(item.broker)}</span>` : ""}
         <span>Invested ${inr(item.invested_amount)}</span>
-        <span style="color:${positive ? "var(--ok)" : "var(--bad)"};font-weight:650">${positive ? "+" : "−"}${inr(Math.abs(item.gain))}</span>
+        ${item.maturity_date ? `<span>Matures ${fmtDate(item.maturity_date)}</span>` : ""}
+        <span style="color:${positive ? "var(--ok)" : "var(--bad)"};font-weight:650">${positive ? "+" : "−"}${inrFull(Math.abs(item.display_gain))}</span>
       </div>
     </article>`;
 }
 
 function investmentCardGroupHtml(group) {
   const invested = group.items.reduce((sum, item) => sum + (Number(item.invested_amount) || 0), 0);
-  const value = group.items.reduce((sum, item) => sum + (Number(item.current_value) || 0), 0);
+  const value = group.items.reduce((sum, item) => sum + (Number(item.display_value) || 0), 0);
   const gain = value - invested;
   return `
     <section class="inv-group">
@@ -2088,7 +2112,7 @@ function investmentsByMember(items) {
     }
     buckets.get(id).items.push(item);
   });
-  const valueOf = (group) => group.items.reduce((sum, item) => sum + (Number(item.current_value) || 0), 0);
+  const valueOf = (group) => group.items.reduce((sum, item) => sum + (Number(item.display_value) || 0), 0);
   const groups = [...buckets.values()].filter((group) => group.items.length || ownerFilter);
   return groups.sort(
     (a, b) => valueOf(b) - valueOf(a) || String(a.member.name).localeCompare(String(b.member.name)),
@@ -2097,7 +2121,7 @@ function investmentsByMember(items) {
 
 function groupHtml(group, cols) {
   const invested = group.items.reduce((sum, item) => sum + (Number(item.invested_amount) || 0), 0);
-  const value = group.items.reduce((sum, item) => sum + (Number(item.current_value) || 0), 0);
+  const value = group.items.reduce((sum, item) => sum + (Number(item.display_value) || 0), 0);
   const gain = value - invested;
   return `
     <tr class="group-row">
@@ -2196,7 +2220,7 @@ function collectFolios(items) {
     const group = groups.get(key);
     group.items.push(item);
     group.invested += Number(item.invested_amount) || 0;
-    group.value += Number(item.current_value) || 0;
+    group.value += Number(item.display_value) || 0;
   });
   return [...groups.values()].sort((a, b) => b.value - a.value);
 }
@@ -2238,7 +2262,7 @@ function openFolioDrawer(key) {
         </td>
         <td>${fmtDate(item.start_date)}</td>
         <td class="num">${inr(item.invested_amount)}</td>
-        <td class="num">${inr(item.current_value)}</td>
+        <td class="num">${inr(item.display_value)}</td>
       </tr>`).join("");
   openDrawer(`
     <div class="drawer-head">
@@ -2331,12 +2355,12 @@ function openInvestmentDrawer(id) {
     </div>
     <div class="drawer-body">
       <div class="drawer-hero">
-        <div class="dh-label">Current value</div>
-        <div class="dh-value">${inr2(item.current_value)}</div>
+        <div class="dh-label">Current value${item.value_note === "principal + accrued interest" ? " · incl. accrued interest" : item.value_note === "principal only" ? " · interest paid out" : ""}</div>
+        <div class="dh-value">${inr2(item.display_value)}</div>
         <div class="dh-row">
           <div class="dh-item"><div class="k">Invested</div><div class="v">${inr2(item.invested_amount)}</div></div>
-          <div class="dh-item"><div class="k">Gain / loss</div><div class="v" style="color:${item.gain >= 0 ? "var(--ok)" : "var(--bad)"}">${item.gain >= 0 ? "+" : "−"}${inr2(Math.abs(item.gain))}</div></div>
-          <div class="dh-item"><div class="k">Return</div><div class="v" style="color:${item.gain >= 0 ? "var(--ok)" : "var(--bad)"}">${pctText(item.gain_pct)}</div></div>
+          <div class="dh-item"><div class="k">Gain / loss</div><div class="v" style="color:${item.display_gain >= 0 ? "var(--ok)" : "var(--bad)"}">${item.display_gain >= 0 ? "+" : "−"}${inr2(Math.abs(item.display_gain))}</div></div>
+          <div class="dh-item"><div class="k">Return</div><div class="v" style="color:${item.display_gain >= 0 ? "var(--ok)" : "var(--bad)"}">${pctText(item.display_gain_pct)}</div></div>
         </div>
       </div>
       <div class="section-label">Holding details</div>
@@ -2751,6 +2775,27 @@ function wireMaturityPreview(form, meta) {
   recalc();
 }
 
+function wirePayoutLock(form) {
+  const payout = form.querySelector('[name="payout"]');
+  const compounding = form.querySelector('[name="compounding"]');
+  if (!payout || !compounding) return;
+  const field = compounding.closest(".field");
+  const help = field?.querySelector(".help");
+  const original = help ? help.textContent : "";
+  const apply = () => {
+    const cumulative = (payout.value || "Cumulative") === "Cumulative";
+    compounding.disabled = cumulative;
+    field?.classList.toggle("is-locked", cumulative);
+    if (help) {
+      help.textContent = cumulative
+        ? "Not applicable — interest compounds and is paid with the maturity amount."
+        : original;
+    }
+  };
+  payout.addEventListener("change", apply);
+  apply();
+}
+
 function isoDay(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -3007,6 +3052,7 @@ function wireInvestmentForm(form, meta, existing) {
   });
 
   wireMaturityPreview(form, meta);
+  wirePayoutLock(form);
   if (form.querySelector('[name="symbol"]')) wireScripLookup(form, meta);
   if (meta.key === "mutual_funds") wireSchemeLookup(form);
   if (meta.key === "etf") wireEtfNameLookup(form);

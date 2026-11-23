@@ -1041,6 +1041,127 @@ def _maturity_amount(type_key: str, details: dict, start: date, maturity: date):
     return None
 
 
+PAYOUT_SCHEMES = {"Post Office MIS", "Senior Citizens' Savings Scheme (SCSS)"}
+
+
+def _iso_date(value):
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _money(value):
+    return float(value) if isinstance(value, (int, float)) and value > 0 else None
+
+
+def _years_held(start: date, end: date) -> float:
+    return ((end - start).days - _leap_days(start, end)) / 365
+
+
+def effective_value(type_key: str, details: dict, invested, current, start_date, today=None):
+    """Today's value of a debt holding and a label for how it is made up.
+
+    Cumulative instruments show the principal plus interest accrued so far;
+    instruments that pay interest periodically show the principal only,
+    because the interest has already left the deposit. Returns
+    (value, note) or (None, "") when the saved current value should stand.
+    """
+    details = details or {}
+    today = today or date.today()
+    invested = float(invested or 0)
+
+    if type_key == "fd":
+        principal = _money(details.get("principal")) or _money(invested)
+        if not principal:
+            return None, ""
+        if (details.get("payout") or "Cumulative") != "Cumulative":
+            return round(principal, 2), "principal only"
+        rate = details.get("interest_rate")
+        start = _iso_date(start_date)
+        maturity = _iso_date(details.get("maturity_date"))
+        if not isinstance(rate, (int, float)):
+            return None, ""
+        if maturity and maturity <= today:
+            value = _money(details.get("maturity_amount"))
+            if not value and start:
+                value = _maturity_amount("fd", details, start, maturity)
+            if value:
+                return round(float(value), 2), "principal + accrued interest"
+        if not start or start > today:
+            return None, ""
+        end = min(today, maturity) if maturity else today
+        years = max(_years_held(start, end), 0)
+        compounding = details.get("compounding") or "Quarterly"
+        if compounding == "Simple":
+            value = principal * (1 + rate / 100 * years)
+        else:
+            per_year = {"Monthly": 12, "Quarterly": 4, "Half-yearly": 2, "Annual": 1}.get(compounding, 4)
+            value = principal * (1 + rate / 100 / per_year) ** (per_year * years)
+        return round(value, 2), "principal + accrued interest"
+
+    if type_key == "rd":
+        monthly = _money(details.get("monthly_amount"))
+        rate = details.get("interest_rate")
+        start = _iso_date(start_date)
+        if not monthly or not isinstance(rate, (int, float)) or not start or start > today:
+            return None, ""
+        maturity = _iso_date(details.get("maturity_date"))
+        end = min(today, maturity) if maturity else today
+        monthly_rate = rate / 100 / 12
+        value = 0.0
+        for k in range(0, 601):
+            due = _add_tenor(start, 0, k, 0)
+            if due > end:
+                break
+            months = max((end.year - due.year) * 12 + (end.month - due.month) + (1 if end.day >= due.day else 0), 0)
+            value += monthly * ((1 + monthly_rate) ** months)
+        if value <= 0:
+            return None, ""
+        return round(value, 2), "principal + accrued interest"
+
+    if type_key == "bonds":
+        principal = _money(invested)
+        if not principal:
+            quantity = _money(details.get("quantity"))
+            price = _money(details.get("purchase_price")) or _money(details.get("face_value"))
+            principal = quantity * price if quantity and price else None
+        if not principal:
+            return None, ""
+        frequency = str(details.get("interest_frequency") or "").strip()
+        if frequency and frequency.lower() != "cumulative":
+            return round(principal, 2), "principal only"
+        rate = details.get("coupon_rate")
+        start = _iso_date(start_date)
+        if not isinstance(rate, (int, float)) or not start or start > today:
+            return None, ""
+        maturity = _iso_date(details.get("maturity_date"))
+        end = min(today, maturity) if maturity else today
+        years = max(_years_held(start, end), 0)
+        return round(principal * (1 + rate / 100 * years), 2), "principal + accrued interest"
+
+    if type_key == "small_savings":
+        deposit = _money(details.get("deposit_amount")) or _money(invested)
+        if not deposit:
+            return None, ""
+        if details.get("scheme") in PAYOUT_SCHEMES:
+            return round(deposit, 2), "principal only"
+        rate = details.get("interest_rate")
+        start = _iso_date(start_date)
+        if not isinstance(rate, (int, float)) or not start or start > today:
+            return None, ""
+        maturity = _iso_date(details.get("maturity_date"))
+        end = min(today, maturity) if maturity else today
+        years = max(_years_held(start, end), 0)
+        return round(deposit * (1 + rate / 100 * years), 2), "principal + accrued interest"
+
+    return None, ""
+
+
 def validate_investment(payload: dict) -> tuple[dict, dict]:
     """Return (cleaned, errors). cleaned['data'] is safe to persist."""
     errors: dict[str, str] = {}
