@@ -869,12 +869,6 @@ function gainCell(value, pct) {
   </div>`;
 }
 
-function valueNoteHtml(item) {
-  if (item.value_note === "principal + accrued interest") return `<div class="sub">incl. accrued interest</div>`;
-  if (item.value_note === "principal only") return `<div class="sub">interest paid out</div>`;
-  return "";
-}
-
 function gainPill(value, pct, compact = false) {
   const positive = value >= 0;
   const text = `${positive ? "+" : "−"}${compact ? compactMoney(Math.abs(value)) : inr(Math.abs(value))} (${pctText(pct)})`;
@@ -1950,6 +1944,7 @@ function renderInvestments() {
       </div>
       <div class="inv-cards" id="inv-cards"></div>
       <div class="table-foot" id="inv-foot"></div>
+      <p class="ledger-note">Current value includes interest accrued to date for cumulative deposits and bonds; holdings that pay interest out show the principal only.</p>
     </div>
   `;
   hydrateIcons($("#view"));
@@ -2028,7 +2023,7 @@ function investmentRowHtml(item) {
         </div>
       </td>
       <td class="num">${inr(item.invested_amount)}</td>
-      <td class="num">${inr(item.display_value)}${valueNoteHtml(item)}</td>
+      <td class="num">${inr(item.display_value)}</td>
       <td class="hide-sm date-cell">${item.maturity_date ? fmtDate(item.maturity_date) : `<span class="muted">—</span>`}</td>
       <td class="num">${gainCell(item.display_gain, item.display_gain_pct)}</td>
       <td class="actions-cell">
@@ -2349,7 +2344,7 @@ function openInvestmentDrawer(id) {
     </div>
     <div class="drawer-body">
       <div class="drawer-hero">
-        <div class="dh-label">Current value${item.value_note === "principal + accrued interest" ? " · incl. accrued interest" : item.value_note === "principal only" ? " · interest paid out" : ""}</div>
+        <div class="dh-label">Current value</div>
         <div class="dh-value">${inr2(item.display_value)}</div>
         <div class="dh-row">
           <div class="dh-item"><div class="k">Invested</div><div class="v">${inr2(item.invested_amount)}</div></div>
