@@ -55,7 +55,8 @@ TXN_TYPES = {"stocks", "etf", "mutual_funds"}
 def _transaction_rows(investment_id: int) -> list:
     return [
         dict(row) for row in db.query(
-            "SELECT * FROM transactions WHERE investment_id = ? ORDER BY trade_date, id",
+            "SELECT * FROM transactions WHERE investment_id = ? "
+            "ORDER BY trade_date, trade_time IS NULL, trade_time, id",
             (investment_id,),
         )
     ]

@@ -430,14 +430,19 @@ earns from the next month, as in a passbook. Leave the amounts blank; type your 
 Open a **stock**, **ETF** or **mutual fund** holding and its drawer carries a
 **Transactions** section below the holding details.
 
-**Importing the trades.** Admins click **Import broker trade report** and pick either:
+**Importing the trades.** Admins click **Import broker trade report** and pick any of:
 
+- **Kotak Neo** → **Reports → Transaction Statement**, downloaded as **CSV** — one
+  file covering every scrip traded in the period. DeepTrack keeps only the rows for
+  the holding you opened and says how many rows for other scrips were ignored.
 - **Kotak Neo** → **Reports → Portfolio Tracker → each holding**, downloaded as
   **Excel** — the `.xlsx` for that one holding.
 - **ICICI Direct** → **Transaction Statement**, downloaded as **PDF** — the
-  `TRX-Equity…pdf` cash-market statement. It covers every scrip traded in the period;
-  DeepTrack keeps only the rows for the holding you opened and says how many rows for
-  other scrips were ignored.
+  `TRX-Equity…pdf` cash-market statement. Like the Kotak CSV it covers every scrip
+  traded in the period, and only the open holding's rows are kept.
+
+Trade histories are imported from the holding's drawer — the **Upload a broker
+report** box on the Import & export page takes holdings snapshots only.
 
 Choose a date range that covers every trade from the first buy. DeepTrack shows a
 preview — trades found, how many are new, how many were already imported — and only

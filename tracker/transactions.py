@@ -1,13 +1,15 @@
 """Broker transaction reports.
 
-Two layouts are understood:
+Three layouts are understood:
 
 * Kotak Neo "Portfolio Transactions" — one workbook per scrip, with the scrip
   name in a header block and a Date / Trade / Quantity table below.
+* Kotak Neo "Transaction Statement" — one CSV for every scrip traded, with
+  Trade Date / Security Name / Transaction Type / Quantity / Market Rate.
 * ICICI Securities "Equity Transaction Statement" (the TRX-Equity PDF) — a
   fixed-width table covering every scrip traded in the period.
 
-Both are normalised into buy/sell rows with a stable fingerprint.
+All are normalised into buy/sell rows with a stable fingerprint.
 """
 
 import csv
@@ -20,13 +22,17 @@ DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y", "%d-
 
 DATE_KEYS = ("date", "trade date", "transaction date")
 KIND_KEYS = ("trade", "buy/sell", "transaction type", "trade type")
+TIME_KEYS = ("time", "trade time", "transaction time")
 PRODUCT_KEYS = ("product type", "product")
 TYPE_KEYS = ("type", "order type", "trade category")
 QUANTITY_KEYS = ("quantity", "qty", "units", "qty.")
-PRICE_KEYS = ("avg unit cost", "average price", "avg price", "price", "rate", "trade price")
-VALUE_KEYS = ("value", "amount", "net amount", "value in inr")
+PRICE_KEYS = ("avg unit cost", "average price", "avg price", "market rate", "price", "rate", "trade price")
+VALUE_KEYS = ("value", "amount", "net amount", "value in inr", "total")
 
-SCRIP_KEYS = ("scrip name", "script name", "scrip", "symbol", "trading symbol")
+SCRIP_KEYS = (
+    "scrip name", "script name", "scrip", "symbol", "trading symbol",
+    "security name", "security", "instrument name",
+)
 
 SKIP_PRODUCTS = ("intraday", "mis", "f&o", "futures", "options", "commodity")
 
@@ -72,6 +78,16 @@ def _parse_date(value):
     return None
 
 
+def _clock(value) -> str:
+    match = re.match(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?", _text(value))
+    if not match:
+        return ""
+    hour, minute, second = int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+    if hour > 23 or minute > 59 or second > 59:
+        return ""
+    return f"{hour:02d}:{minute:02d}:{second:02d}"
+
+
 def _sheet_rows(blob: bytes) -> list:
     try:
         import openpyxl
@@ -99,6 +115,11 @@ def _csv_rows(blob: bytes) -> list:
 
 def _find_scrip(rows: list) -> str:
     for row in rows:
+        labels = [_norm(cell) for cell in row]
+        if any(_match(label, QUANTITY_KEYS) for label in labels) and \
+                any(_match(label, DATE_KEYS) for label in labels):
+            # A table header, not a scrip block (the multi-scrip CSV).
+            continue
         for index, cell in enumerate(row):
             if _norm(cell) in SCRIP_KEYS:
                 for later in row[index + 1:]:
@@ -206,6 +227,7 @@ def _icici_rows(lines: list) -> dict:
         fingerprints[base] = fingerprints.get(base, 0) + 1
         result.append({
             "trade_date": trade_date.isoformat(),
+            "trade_time": "",
             "kind": kind,
             "quantity": round(quantity, 4),
             "price": round(price, 4),
@@ -237,16 +259,17 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
     header_index, labels = _find_header(rows)
     if header_index is None:
         raise ValueError(
-            "This doesn't look like a per-holding Kotak report — no Date / Trade / Quantity columns found. "
-            "In Kotak Neo open Reports → Portfolio Tracker, choose each holding and download it as Excel."
+            "This doesn't look like a Kotak trade report — no Date / Trade / Quantity columns found. "
+            "In Kotak Neo download either Reports → Transaction Statement (CSV, covers every scrip) "
+            "or Portfolio Tracker for each holding (Excel)."
         )
 
     used = set()
     columns = {}
     for key, keys in (
-        ("date", DATE_KEYS), ("kind", KIND_KEYS), ("product", PRODUCT_KEYS),
+        ("date", DATE_KEYS), ("time", TIME_KEYS), ("kind", KIND_KEYS), ("product", PRODUCT_KEYS),
         ("trade_type", TYPE_KEYS), ("quantity", QUANTITY_KEYS),
-        ("price", PRICE_KEYS), ("value", VALUE_KEYS),
+        ("price", PRICE_KEYS), ("value", VALUE_KEYS), ("security", SCRIP_KEYS),
     ):
         index = _column(labels, keys, used)
         if index is not None:
@@ -264,6 +287,7 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
     result = []
     skipped = 0
     fingerprints = {}
+    securities = set()
     for row in rows[header_index + 1:]:
         if not row:
             continue
@@ -283,20 +307,27 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
         if value is None or value == 0:
             value = quantity * price
         trade_type = _text(cell(row, "trade_type"))
+        row_security = _text(cell(row, "security"))
+        if row_security:
+            securities.add(row_security)
+        security = row_security or scrip
         base = "|".join([
             trade_date.isoformat(), kind, f"{quantity:.4f}", f"{price:.4f}",
             f"{abs(value):.2f}", trade_type.lower(),
         ])
+        if row_security:
+            base = f"{row_security.lower()}|{base}"
         fingerprints[base] = fingerprints.get(base, 0) + 1
         result.append({
             "trade_date": trade_date.isoformat(),
+            "trade_time": _clock(cell(row, "time")),
             "kind": kind,
             "quantity": round(quantity, 4),
             "price": round(price, 4),
             "value": round(value, 2),
             "product": product,
             "trade_type": trade_type,
-            "security": scrip,
+            "security": security,
             "fingerprint": hashlib.sha1(f"{base}|{fingerprints[base]}".encode()).hexdigest()[:40],
         })
 
@@ -305,7 +336,7 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
 
     return {
         "scrip": scrip,
-        "scrips": [scrip] if scrip else [],
+        "scrips": sorted(securities) or ([scrip] if scrip else []),
         "rows": result,
         "skipped": skipped,
     }

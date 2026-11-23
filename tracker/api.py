@@ -1090,11 +1090,12 @@ def import_transactions(item_id: int):
     for row in fresh:
         cursor = conn.execute(
             """INSERT OR IGNORE INTO transactions
-               (investment_id, trade_date, kind, quantity, price, value, product, trade_type,
-                source, fingerprint, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (investment_id, trade_date, trade_time, kind, quantity, price, value, product,
+                trade_type, source, fingerprint, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                item_id, row["trade_date"], row["kind"], row["quantity"], row["price"], row["value"],
+                item_id, row["trade_date"], row.get("trade_time", ""), row["kind"],
+                row["quantity"], row["price"], row["value"],
                 row["product"], row["trade_type"], source, row["fingerprint"], actor["id"], now,
             ),
         )

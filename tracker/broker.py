@@ -994,6 +994,20 @@ def _mark_existing(
 # ---------------------------------------------------------------- entry point
 
 
+def _looks_like_trade_history(tables) -> bool:
+    """A trade history lists every buy and sell; read as holdings it becomes
+    one holding per trade, so refuse it and point at the trade-report import."""
+    for _, rows in tables:
+        for raw in rows[:40]:
+            labels = {_norm(cell) for cell in raw if _text(cell)}
+            dated = labels & {"trade date", "transaction date"}
+            typed = labels & {"transaction type", "trade type", "buy/sell"}
+            named = labels & {"security name", "scrip name", "script name", "symbol", "trading symbol"}
+            if dated and typed and named:
+                return True
+    return False
+
+
 def parse_broker(
     stream,
     filename,
@@ -1008,6 +1022,11 @@ def parse_broker(
     tables = _read_tables(stream, filename)
     if not tables:
         raise ValueError("This file has no sheets. Upload the broker's holdings export.")
+    if _looks_like_trade_history(tables):
+        raise ValueError(
+            "This file is a trade history — every buy and sell, not holdings. "
+            "Open the holding under Instruments and choose Import broker trade report."
+        )
     broker = _detect_broker(filename, tables)
     catalog = SchemeCatalog()
     scrips = ScripIndex()

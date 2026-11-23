@@ -2324,11 +2324,11 @@ function transactionsSectionHtml(item) {
       <button class="btn btn-secondary btn-block btn-sm" type="button" data-action="txn-import" data-id="${item.id}">${icon("upload")} Import broker trade report</button>
       <input type="file" id="txn-file-${item.id}" accept=".xlsx,.xlsm,.csv,.pdf" hidden>
     </div>` : "";
-  const hint = `<p class="txn-hint">Kotak Neo → <strong>Portfolio Tracker</strong> → each holding, downloaded as <strong>Excel</strong> (.xlsx, one holding per file), or ICICI Direct → <strong>Transaction Statement</strong> downloaded as <strong>PDF</strong>. Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped.</p>`;
+  const hint = `<p class="txn-hint">Kotak Neo → <strong>Transaction Statement</strong> as <strong>CSV</strong> (covers every scrip at once) or <strong>Portfolio Tracker</strong> per holding as <strong>Excel</strong>, or ICICI Direct → <strong>Transaction Statement</strong> as <strong>PDF</strong>. Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped.</p>`;
   if (!rows.length) {
     return `<div class="section-label">Transactions</div>
       <div class="txn-card">
-        <p class="muted small" style="margin:0">Import the holding's trade report — Kotak "Portfolio Tracker" Excel or ICICI "Transaction Statement" PDF — to see every trade here, with realised (FIFO) and unrealised gains.</p>
+        <p class="muted small" style="margin:0">Import a broker trade report — Kotak "Transaction Statement" CSV or "Portfolio Tracker" Excel, or ICICI "Transaction Statement" PDF — to see every trade here, with realised (FIFO) and unrealised gains.</p>
         ${actions}
         ${hint}
       </div>`;
@@ -4522,9 +4522,10 @@ function renderImport() {
         <div class="dz-icon">${icon("upload")}</div>
         <h4>Drop your broker's holdings export here</h4>
         <p>or click to browse files</p>
-        <span class="file-hint">Excel (.xlsx, .xls) or CSV downloaded from ICICI Direct / Kotak Securities</span>
+        <span class="file-hint">Holdings only — Excel (.xlsx, .xls) or CSV from ICICI Direct / Kotak Securities</span>
       </div>
       <input type="file" id="broker-file" accept=".xlsx,.xlsm,.xls,.csv" class="hidden">
+      <p class="muted small" style="margin:10px 0 0">Buying and selling history? Open the holding under Instruments and choose <strong>Import broker trade report</strong> — Kotak Transaction Statement CSV, Kotak Portfolio Tracker Excel or ICICI Transaction Statement PDF.</p>
     </section>
 
     <section class="card card-pad" style="margin-bottom:18px">

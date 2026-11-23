@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     investment_id   INTEGER NOT NULL REFERENCES investments (id) ON DELETE CASCADE,
     trade_date      TEXT    NOT NULL,
+    trade_time      TEXT,
     kind            TEXT    NOT NULL CHECK (kind IN ('buy', 'sell')),
     quantity        REAL    NOT NULL,
     price           REAL    NOT NULL,
@@ -270,12 +271,19 @@ def _ensure_import_files(conn) -> None:
         conn.execute("ALTER TABLE import_files ADD COLUMN updated INTEGER NOT NULL DEFAULT 0")
 
 
+def _ensure_transactions_time(conn) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)")}
+    if "trade_time" not in columns:
+        conn.execute("ALTER TABLE transactions ADD COLUMN trade_time TEXT")
+
+
 def init_db(app) -> None:
     with app.app_context():
         conn = get_db()
         conn.executescript(SCHEMA)
         _ensure_public_id(conn)
         _ensure_import_files(conn)
+        _ensure_transactions_time(conn)
         conn.commit()
 
 
