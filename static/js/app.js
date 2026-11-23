@@ -2324,7 +2324,7 @@ function transactionsSectionHtml(item) {
       <button class="btn btn-secondary btn-block btn-sm" type="button" data-action="txn-import" data-id="${item.id}">${icon("upload")} Import broker trade report</button>
       <input type="file" id="txn-file-${item.id}" accept=".xlsx,.xlsm,.csv,.pdf" hidden>
     </div>` : "";
-  const hint = `<p class="txn-hint">Kotak Neo → <strong>Transaction Statement</strong> as <strong>CSV</strong> (covers every scrip at once) or <strong>Portfolio Tracker</strong> per holding as <strong>Excel</strong>, or ICICI Direct → <strong>Transaction Statement</strong> as <strong>PDF</strong>. Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped.</p>`;
+  const hint = `<p class="txn-hint">Kotak Neo → <strong>Transaction Statement</strong> as <strong>CSV</strong> (covers every scrip at once) or <strong>Portfolio Tracker</strong> per holding as <strong>Excel</strong>, or ICICI Direct → <strong>Transaction Statement</strong> as <strong>PDF</strong>. Use a date range that covers every trade. Re-importing is safe — duplicate rows are skipped. To file a whole statement in one go, use Import &amp; export → <strong>Import a broker trade statement</strong>.</p>`;
   if (!rows.length) {
     return `<div class="section-label">Transactions</div>
       <div class="txn-card">
@@ -4525,7 +4525,25 @@ function renderImport() {
         <span class="file-hint">Holdings only — Excel (.xlsx, .xls) or CSV from ICICI Direct / Kotak Securities</span>
       </div>
       <input type="file" id="broker-file" accept=".xlsx,.xlsm,.xls,.csv" class="hidden">
-      <p class="muted small" style="margin:10px 0 0">Buying and selling history? Open the holding under Instruments and choose <strong>Import broker trade report</strong> — Kotak Transaction Statement CSV, Kotak Portfolio Tracker Excel or ICICI Transaction Statement PDF.</p>
+      <p class="muted small" style="margin:10px 0 0">Buying and selling history? Use the trade statement box below, or open one holding under Instruments and choose <strong>Import broker trade report</strong>.</p>
+    </section>
+
+    <section class="card card-pad" style="margin-bottom:18px">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Import a broker trade statement</div>
+          <div class="card-sub">One period, every scrip — each trade is filed against the holding it belongs to</div>
+        </div>
+        <span class="pill pill-muted">ICICI · Kotak</span>
+      </div>
+      <div class="dropzone" id="statement-dropzone" tabindex="0" role="button" aria-label="Upload trade statement">
+        <div class="dz-icon">${icon("upload")}</div>
+        <h4>Drop a trade statement here</h4>
+        <p>or click to browse files</p>
+        <span class="file-hint">ICICI Transaction Statement (.pdf) or Kotak Transaction Statement (.csv)</span>
+      </div>
+      <input type="file" id="statement-file" accept=".pdf,.csv,.xlsx,.xlsm" class="hidden">
+      <p class="muted small" style="margin:10px 0 0">Trades are matched to stocks, ETFs and equity funds by scrip name. Rows for scrips you don't hold yet are listed and skipped; duplicates are ignored.</p>
     </section>
 
     <section class="card card-pad" style="margin-bottom:18px">
@@ -4555,6 +4573,7 @@ function renderImport() {
   hydrateIcons($("#view"));
   wireDropzone();
   wireBrokerDropzone();
+  wireStatementDropzone();
   $("#import-update-existing")?.addEventListener("change", (event) => {
     state.importUpdateExisting = event.target.checked;
   });
@@ -4597,6 +4616,103 @@ function wireDropzone(zoneId = "dropzone", inputId = "import-file", onFile = upl
 
 function wireBrokerDropzone() {
   wireDropzone("broker-dropzone", "broker-file", uploadBroker);
+}
+
+function wireStatementDropzone() {
+  wireDropzone("statement-dropzone", "statement-file", uploadStatement);
+}
+
+function resetStatementZone() {
+  const zone = $("#statement-dropzone");
+  zone?.classList.remove("busy");
+  const title = zone?.querySelector("h4");
+  const sub = zone?.querySelector("p");
+  if (title) title.textContent = "Drop a trade statement here";
+  if (sub) sub.textContent = "or click to browse files";
+}
+
+async function uploadStatement(file) {
+  if (!/\.(pdf|csv|xlsx|xlsm)$/i.test(file.name)) {
+    toast("Upload the statement as .pdf, .csv or .xlsx", "error");
+    return;
+  }
+  const zone = $("#statement-dropzone");
+  zone?.classList.add("busy");
+  const title = zone?.querySelector("h4");
+  const sub = zone?.querySelector("p");
+  if (title) title.textContent = "Reading the statement…";
+  if (sub) sub.textContent = file.name;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const data = await api("/transactions/import", { method: "POST", form });
+    resetStatementZone();
+    openStatementPreview(file, data);
+  } catch (error) {
+    resetStatementZone();
+    toast(error.message, "error");
+  }
+}
+
+function openStatementPreview(file, data) {
+  const holdings = data.holdings || [];
+  const total = data.new || 0;
+  const holdingRows = holdings.map((h) => `
+    <div class="txn-preview-row">
+      <strong style="flex:1;min-width:0">${esc(h.name)}</strong>
+      <span class="muted small">${esc(h.owner)}</span>
+      <span class="txn-qty">${h.rows} trade${h.rows === 1 ? "" : "s"}</span>
+      <strong class="txn-value">${h.new ? `${h.new} new` : "all imported"}</strong>
+    </div>`).join("");
+  const unmatched = data.unmatched || [];
+  const ambiguous = data.ambiguous || [];
+  const unmatchedLabel = unmatched.length > 6
+    ? `${unmatched.slice(0, 6).map((u) => `${u.security} (${u.rows})`).join(", ")} +${unmatched.length - 6} more`
+    : unmatched.map((u) => `${u.security} (${u.rows})`).join(", ");
+  const body = `
+    <div class="txn-import-facts">
+      <div><span>Trades in statement</span><strong>${data.rows}</strong></div>
+      <div><span>Holdings matched</span><strong>${holdings.length}</strong></div>
+      <div><span>New trades</span><strong>${total}</strong></div>
+      <div><span>Already imported</span><strong>${data.duplicates}</strong></div>
+    </div>
+    ${holdingRows ? `<div class="txn-preview-list">${holdingRows}</div>` : ""}
+    ${unmatched.length ? `<p class="muted small">No holding matches ${esc(unmatchedLabel)} — those rows are skipped. Add those holdings first, then import the statement again.</p>` : ""}
+    ${ambiguous.length ? `<p class="muted small">${esc(ambiguous.map((a) => `${a.security} (${a.holdings.join(" / ")})`).join("; "))} — held by more than one member, so those rows are skipped. Import that scrip from the holding's own drawer instead.</p>` : ""}
+    ${data.blank ? `<p class="muted small">${data.blank} row${data.blank === 1 ? "" : "s"} skipped — no scrip name in the statement.</p>` : ""}
+    ${data.skipped ? `<p class="muted small">${data.skipped} row${data.skipped === 1 ? "" : "s"} skipped — intraday, F&amp;O or missing data.</p>` : ""}
+    ${!total ? `<p class="muted small">Every matched trade in this statement is already imported.</p>` : ""}
+  `;
+  const label = `Import ${total} trade${total === 1 ? "" : "s"}`;
+  openModal({
+    title: "Import a trade statement",
+    subtitle: esc(file.name),
+    size: "md",
+    body,
+    footer: `<button class="btn btn-secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="button" id="statement-commit" ${total ? "" : "disabled"}>${label}</button>`,
+    onMount: (backdrop, close) => {
+      backdrop.querySelector("#statement-commit")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "Importing…";
+        const form = new FormData();
+        form.append("file", file);
+        form.append("commit", "1");
+        try {
+          const result = await api("/transactions/import", { method: "POST", form });
+          close();
+          const across = (result.holdings || []).length;
+          toast(`${result.imported} trade${result.imported === 1 ? "" : "s"} imported across ${across} holding${across === 1 ? "" : "s"}`, "ok");
+          await refreshData();
+        } catch (error) {
+          toast(error.message, "error");
+          button.disabled = false;
+          button.textContent = label;
+        }
+      });
+    },
+  });
 }
 
 async function uploadImport(file) {

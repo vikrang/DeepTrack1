@@ -153,6 +153,8 @@ def _column(labels: list, keys, used: set):
     return None
 
 
+ICICI_ISIN_PREFIX_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{10}\s+")
+
 ICICI_ROW_RE = re.compile(
     r"^(?P<contract>\S+)\s+(?P<settle_no>\d+)\s+(?P<exchange>BSE|NSE)\s+"
     r"(?P<order_no>\d+)\s+(?P<order_date>\d{2}-\d{2}-\d{4})\s+"
@@ -208,6 +210,7 @@ def _icici_rows(lines: list) -> dict:
             if fragment and not re.search(r"\d{2}:\d{2}", fragment):
                 security = f"{security} {fragment}".strip()
             following += 1
+        security = ICICI_ISIN_PREFIX_RE.sub("", " ".join(security.split())).strip()
         scrips.append(security)
         quantity = _number(match.group("qty"))
         price = _number(match.group("rate"))

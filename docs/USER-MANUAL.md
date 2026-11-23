@@ -430,19 +430,27 @@ earns from the next month, as in a passbook. Leave the amounts blank; type your 
 Open a **stock**, **ETF** or **mutual fund** holding and its drawer carries a
 **Transactions** section below the holding details.
 
-**Importing the trades.** Admins click **Import broker trade report** and pick any of:
+**Importing the trades.** There are two ways in:
 
-- **Kotak Neo** → **Reports → Transaction Statement**, downloaded as **CSV** — one
-  file covering every scrip traded in the period. DeepTrack keeps only the rows for
-  the holding you opened and says how many rows for other scrips were ignored.
-- **Kotak Neo** → **Reports → Portfolio Tracker → each holding**, downloaded as
-  **Excel** — the `.xlsx` for that one holding.
-- **ICICI Direct** → **Transaction Statement**, downloaded as **PDF** — the
-  `TRX-Equity…pdf` cash-market statement. Like the Kotak CSV it covers every scrip
-  traded in the period, and only the open holding's rows are kept.
+- **One statement for the whole portfolio** — go to **Import & export → Import a
+  broker trade statement** and drop the ICICI **Transaction Statement PDF** or the
+  Kotak **Transaction Statement CSV**. Every trade is filed against the holding whose
+  scrip matches; rows for scrips you don't hold are listed and skipped, and a scrip
+  held by more than one member is skipped so it can be imported from that holding's
+  drawer instead. The preview names each holding with its trade count before anything
+  is written.
+- **One holding at a time** — open the holding, click **Import broker trade report**
+  and pick any of:
+  - **Kotak Neo** → **Reports → Transaction Statement**, downloaded as **CSV** — one
+    file covering every scrip traded in the period; only the open holding's rows are kept.
+  - **Kotak Neo** → **Reports → Portfolio Tracker → each holding**, downloaded as
+    **Excel** — the `.xlsx` for that one holding.
+  - **ICICI Direct** → **Transaction Statement**, downloaded as **PDF** — the
+    `TRX-Equity…pdf` cash-market statement, covering every scrip in the period.
 
-Trade histories are imported from the holding's drawer — the **Upload a broker
-report** box on the Import & export page takes holdings snapshots only.
+The **Upload a broker report** box on the Import & export page takes holdings
+snapshots only — a trade statement dropped there is refused with a pointer to the
+trade-statement box.
 
 Choose a date range that covers every trade from the first buy. DeepTrack shows a
 preview — trades found, how many are new, how many were already imported — and only

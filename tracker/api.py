@@ -1008,6 +1008,38 @@ def _scrip_matches(report_name: str, item_name: str, symbol: str) -> bool:
     return len(short) >= 8 and long.startswith(short)
 
 
+def _insert_transaction(conn, investment_id, row, source, actor_id, now) -> int:
+    cursor = conn.execute(
+        """INSERT OR IGNORE INTO transactions
+           (investment_id, trade_date, trade_time, kind, quantity, price, value, product,
+            trade_type, source, fingerprint, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            investment_id, row["trade_date"], row.get("trade_time", ""), row["kind"],
+            row["quantity"], row["price"], row["value"],
+            row["product"], row["trade_type"], source, row["fingerprint"], actor_id, now,
+        ),
+    )
+    return cursor.rowcount
+
+
+def _trade_holdings() -> list:
+    holdings = []
+    rows = db.query(
+        """SELECT i.*, u.name AS owner_name FROM investments i
+           JOIN users u ON u.id = i.owner_id
+           WHERE i.type IN ('stocks', 'etf', 'mutual_funds')
+           ORDER BY i.name COLLATE NOCASE"""
+    )
+    for item in rows:
+        try:
+            details = json.loads(item["details"] or "{}")
+        except (TypeError, ValueError):
+            details = {}
+        holdings.append((item, str(details.get("symbol") or "")))
+    return holdings
+
+
 @bp.post("/investments/<int:item_id>/transactions/import")
 @admin_required
 def import_transactions(item_id: int):
@@ -1088,18 +1120,7 @@ def import_transactions(item_id: int):
     conn = db.get_db()
     imported = 0
     for row in fresh:
-        cursor = conn.execute(
-            """INSERT OR IGNORE INTO transactions
-               (investment_id, trade_date, trade_time, kind, quantity, price, value, product,
-                trade_type, source, fingerprint, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                item_id, row["trade_date"], row.get("trade_time", ""), row["kind"],
-                row["quantity"], row["price"], row["value"],
-                row["product"], row["trade_type"], source, row["fingerprint"], actor["id"], now,
-            ),
-        )
-        imported += cursor.rowcount
+        imported += _insert_transaction(conn, item_id, row, source, actor["id"], now)
     conn.commit()
     if imported:
         db.log_activity(
@@ -1111,6 +1132,123 @@ def import_transactions(item_id: int):
         imported=imported,
         duplicates=len(rows) - len(fresh),
         investment=services.investment_payload(updated),
+    )
+
+
+@bp.post("/transactions/import")
+@admin_required
+def import_statement_transactions():
+    """One statement, many scrips: post each trade to its matching holding."""
+    actor = current_user()
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify(error="Choose the broker's trade statement to upload"), 400
+    blob = upload.read()
+    if not blob:
+        return jsonify(error="That file is empty. Download the statement again."), 400
+    try:
+        parsed = transactions.parse_transactions(blob, upload.filename)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 422
+
+    fallback = str(parsed.get("scrip") or "").strip()
+    holdings = _trade_holdings()
+    bucket = {}
+    unmatched = {}
+    ambiguous = {}
+    blank = 0
+    for row in parsed["rows"]:
+        security = (row.get("security") or fallback).strip()
+        if not security:
+            blank += 1
+            continue
+        hits = [
+            (item, symbol) for item, symbol in holdings
+            if _scrip_matches(security, item["name"], symbol)
+        ]
+        if not hits:
+            unmatched[security] = unmatched.get(security, 0) + 1
+        elif len(hits) > 1:
+            entry = ambiguous.setdefault(security, {
+                "security": security,
+                "rows": 0,
+                "holdings": [f"{item['name']} — {item['owner_name']}" for item, _ in hits],
+            })
+            entry["rows"] += 1
+        else:
+            item, symbol = hits[0]
+            entry = bucket.setdefault(item["id"], {"item": item, "symbol": symbol, "rows": []})
+            entry["rows"].append(row)
+
+    if not bucket:
+        found = sorted(unmatched)
+        listed = ", ".join(found[:3])
+        if len(found) > 3:
+            listed += f" and {len(found) - 3} more"
+        detail = f" ({listed})" if listed else ""
+        return jsonify(error=(
+            "None of the scrips in this statement match a stock, ETF or equity fund "
+            f"in the portfolio{detail}. Add the holdings first, then import again."
+        )), 422
+
+    existing = {}
+    for row in db.query("SELECT investment_id, fingerprint FROM transactions"):
+        existing.setdefault(row["investment_id"], set()).add(row["fingerprint"])
+
+    summaries = []
+    total_new = 0
+    total_dupes = 0
+    for entry in bucket.values():
+        known = existing.get(entry["item"]["id"], set())
+        entry["fresh"] = [row for row in entry["rows"] if row["fingerprint"] not in known]
+        rows = entry["rows"]
+        dates = sorted(row["trade_date"] for row in rows)
+        buys = sum(1 for row in rows if row["kind"] == "buy")
+        total_new += len(entry["fresh"])
+        total_dupes += len(rows) - len(entry["fresh"])
+        summaries.append({
+            "id": entry["item"]["id"],
+            "name": entry["item"]["name"],
+            "owner": entry["item"]["owner_name"],
+            "symbol": entry["symbol"],
+            "rows": len(rows),
+            "new": len(entry["fresh"]),
+            "duplicates": len(rows) - len(entry["fresh"]),
+            "buys": buys,
+            "sells": len(rows) - buys,
+            "first_date": dates[0] if dates else "",
+            "last_date": dates[-1] if dates else "",
+        })
+    summaries.sort(key=lambda s: s["name"].lower())
+
+    commit = str(request.form.get("commit") or "") in ("1", "true", "yes")
+    if commit:
+        source = "icici" if (upload.filename or "").lower().endswith(".pdf") else "kotak"
+        now = db.now()
+        conn = db.get_db()
+        imported = 0
+        for entry in bucket.values():
+            for row in entry["fresh"]:
+                imported += _insert_transaction(conn, entry["item"]["id"], row, source, actor["id"], now)
+        conn.commit()
+        if imported:
+            db.log_activity(
+                actor["id"], "imported",
+                f"Imported {imported} transaction(s) across {len(bucket)} holding(s) "
+                f"from {upload.filename}", "investment", None,
+            )
+        return jsonify(imported=imported, duplicates=total_dupes, holdings=summaries)
+
+    return jsonify(
+        file=upload.filename,
+        rows=len(parsed["rows"]),
+        skipped=parsed["skipped"],
+        blank=blank,
+        new=total_new,
+        duplicates=total_dupes,
+        holdings=summaries,
+        unmatched=[{"security": name, "rows": count} for name, count in sorted(unmatched.items())],
+        ambiguous=sorted(ambiguous.values(), key=lambda a: a["security"].lower()),
     )
 
 
