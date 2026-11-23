@@ -4543,7 +4543,7 @@ function renderImport() {
         <span class="file-hint">ICICI or Kotak Transaction Statement (.pdf), or Kotak Transaction Statement (.csv)</span>
       </div>
       <input type="file" id="statement-file" accept=".pdf,.csv,.xlsx,.xlsm" class="hidden">
-      <p class="muted small" style="margin:10px 0 0">Trades are matched to stocks, ETFs and equity funds by scrip name or ISIN. Scrips you don't hold yet are offered as new holdings in the preview — pick whose they are, and their quantity and average cost come from this statement's trades. Duplicates are ignored.</p>
+      <p class="muted small" style="margin:10px 0 0">Trades are matched to stocks, ETFs and equity funds by scrip name or ISIN. Scrips you don't hold yet are offered as new holdings in the preview — pick whose they are, and their quantity and average cost come from this statement's trades. Blank broker, sector and demat details on matched holdings are filled too, existing values are kept, and the client code in the file name is saved as a demat account under Masters. Duplicates are ignored.</p>
     </section>
 
     <section class="card card-pad" style="margin-bottom:18px">
@@ -4675,22 +4675,34 @@ function openStatementPreview(file, data) {
       <strong class="txn-value">${c.rows} trade${c.rows === 1 ? "" : "s"}</strong>
     </div>`).join("");
   const ambiguous = data.ambiguous || [];
+  const filledHoldings = holdings.filter((h) => (h.fills || []).length);
   const me = state.members.find((m) => m.is_self) || state.members[0];
+  const brokerNote = data.broker
+    ? `${esc(data.broker)} statement${data.client_id ? ` · client ID ${esc(data.client_id)}` : ""}`
+    : "";
+  const fillNote = filledHoldings.length
+    ? `Fills blank details: ${filledHoldings.map((h) => `<strong>${esc(h.name)}</strong> — ${esc(h.fills.join(", "))}`).join(" · ")}.`
+    : "";
+  const dematNote = data.client_id && data.broker
+    ? `The demat account ${esc(data.client_id)} (${esc(data.broker)}) is saved under Masters for the member you pick, and linked to the new holdings.`
+    : "";
   const ownerSelect = ready.length ? `
     <label class="field" style="margin-top:14px;max-width:340px">
       <span>Create the new holdings under</span>
       <select id="statement-create-owner">
         ${state.members.map((m) => `<option value="${m.id}" ${me && m.id === me.id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
       </select>
-      <span class="help">Quantity and average cost are worked out from this statement's trades, so a statement that starts mid-year can understate what is held.</span>
+      <span class="help">Quantity and average cost are worked out from this statement's trades, so a statement that starts mid-year can understate what is held.${dematNote ? ` ${dematNote}` : ""}</span>
     </label>` : "";
   const body = `
+    ${brokerNote ? `<p class="muted small">${brokerNote}</p>` : ""}
     <div class="txn-import-facts">
       <div><span>Trades in statement</span><strong>${data.rows}</strong></div>
       <div><span>Holdings matched</span><strong>${holdings.length}</strong></div>
       <div><span>New trades</span><strong>${total}</strong></div>
       <div><span>Already imported</span><strong>${data.duplicates}</strong></div>
     </div>
+    ${fillNote ? `<p class="muted small">${fillNote}</p>` : ""}
     ${holdingRows ? `<div class="txn-preview-list">${holdingRows}</div>` : ""}
     ${creationRows ? `
       <div class="section-label" style="margin-top:16px">New holdings · ${ready.length}</div>
@@ -4700,19 +4712,21 @@ function openStatementPreview(file, data) {
     ${ambiguous.length ? `<p class="muted small">${esc(ambiguous.map((a) => `${a.security} (${a.holdings.join(" / ")})`).join("; "))} — held by more than one member, so those rows are skipped. Import that scrip from the holding's own drawer instead.</p>` : ""}
     ${data.blank ? `<p class="muted small">${data.blank} row${data.blank === 1 ? "" : "s"} skipped — no scrip name in the statement.</p>` : ""}
     ${data.skipped ? `<p class="muted small">${data.skipped} row${data.skipped === 1 ? "" : "s"} skipped — intraday, F&amp;O or missing data.</p>` : ""}
-    ${!total ? `<p class="muted small">Every trade in this statement is already imported, or nothing can be imported from it.</p>` : ""}
+    ${!total ? `<p class="muted small">${filledHoldings.length ? "No new trades — the details below are still filled on import." : "Every trade in this statement is already imported, or nothing can be imported from it."}</p>` : ""}
   `;
   const bits = [];
   if (total) bits.push(`Import ${total} trade${total === 1 ? "" : "s"}`);
   if (ready.length) bits.push(`create ${ready.length} holding${ready.length === 1 ? "" : "s"}`);
-  const label = bits.length ? bits.join(" · ") : "Nothing new to import";
+  const label = bits.length
+    ? bits.join(" · ")
+    : filledHoldings.length ? "Fill missing details" : "Nothing new to import";
   openModal({
     title: "Import a trade statement",
     subtitle: esc(file.name),
     size: "md",
     body,
     footer: `<button class="btn btn-secondary" type="button" data-close>Cancel</button>
-      <button class="btn btn-primary" type="button" id="statement-commit" ${total ? "" : "disabled"}>${label}</button>`,
+      <button class="btn btn-primary" type="button" id="statement-commit" ${total || filledHoldings.length ? "" : "disabled"}>${label}</button>`,
     onMount: (backdrop, close) => {
       backdrop.querySelector("#statement-commit")?.addEventListener("click", async (event) => {
         const button = event.currentTarget;
@@ -4730,10 +4744,15 @@ function openStatementPreview(file, data) {
           close();
           const across = (result.holdings || []).length + (result.created || []).length;
           const fresh = (result.created || []).length;
-          toast(
-            `${result.imported} trade${result.imported === 1 ? "" : "s"} imported across ${across} holding${across === 1 ? "" : "s"}${fresh ? ` · ${fresh} new holding${fresh === 1 ? "" : "s"} created` : ""}`,
-            "ok"
-          );
+          const filledNow = (result.filled || []).length;
+          const parts = [];
+          if (result.imported) {
+            parts.push(`${result.imported} trade${result.imported === 1 ? "" : "s"} imported across ${across} holding${across === 1 ? "" : "s"}`);
+          }
+          if (fresh) parts.push(`${fresh} new holding${fresh === 1 ? "" : "s"} created`);
+          if (filledNow) parts.push(`details filled on ${filledNow}`);
+          if (result.demat?.created) parts.push(`demat ${result.demat.client_id} saved to Masters`);
+          toast(parts.join(" · ") || "Nothing new to import", "ok");
           await refreshData();
         } catch (error) {
           toast(error.message, "error");
@@ -4868,17 +4887,23 @@ function openTransactionPreview(id, file, data) {
     ${data.other_rows ? `<p class="muted small">${data.other_rows} row${data.other_rows === 1 ? "" : "s"} for other scrips in this statement ${data.other_rows === 1 ? "is" : "are"} ignored.</p>` : ""}
     ${data.skipped ? `<p class="muted small">${data.skipped} row${data.skipped === 1 ? "" : "s"} skipped — intraday, F&amp;O or missing data.</p>` : ""}
     ${data.rows ? `<p class="muted small">${data.buys} buy · ${data.sells} sell · ${fmtDate(data.first_date)} to ${fmtDate(data.last_date)}</p>` : `<p class="muted small">No transactions were found in this file.</p>`}
+    ${(data.fills || []).length ? `<p class="muted small">Fills blank details: ${esc(data.fills.join(", "))}.</p>` : ""}
+    ${data.demat ? `<p class="muted small">Demat account ${esc(data.demat.client_id)} (${esc(data.demat.broker)}) ${data.demat.saved ? "is already saved under Masters." : `is saved under Masters${item?.owner ? ` for ${esc(item.owner)}` : ""} and linked to this holding.`}</p>` : ""}
     ${rows ? `<div class="txn-preview-list">${rows}</div>` : ""}
     ${total > (data.preview || []).length ? `<p class="muted small">Showing the first ${(data.preview || []).length} of ${total} new rows.</p>` : ""}
   `;
-  const label = `Import ${total} transaction${total === 1 ? "" : "s"}`;
+  const fillCount = (data.fills || []).length;
+  const dematAction = Boolean(data.demat && !data.demat.saved && data.matches);
+  const label = total
+    ? `Import ${total} transaction${total === 1 ? "" : "s"}`
+    : fillCount ? "Fill missing details" : dematAction ? "Save demat account" : "Nothing to import";
   openModal({
     title: "Import transactions",
     subtitle: `${esc(item?.name || "Holding")} — ${esc(file.name)}`,
     size: "md",
     body,
     footer: `<button class="btn btn-secondary" type="button" data-close>Cancel</button>
-      <button class="btn btn-primary" type="button" id="txn-commit" ${!total || !data.matches ? "disabled" : ""}>${label}</button>`,
+      <button class="btn btn-primary" type="button" id="txn-commit" ${(total || fillCount || dematAction) && data.matches ? "" : "disabled"}>${label}</button>`,
     onMount: (backdrop, close) => {
       backdrop.querySelector("#txn-commit")?.addEventListener("click", async (event) => {
         const button = event.currentTarget;
@@ -4890,7 +4915,12 @@ function openTransactionPreview(id, file, data) {
         try {
           const result = await api(`/investments/${id}/transactions/import`, { method: "POST", form });
           close();
-          toast(`${result.imported} transaction${result.imported === 1 ? "" : "s"} imported`, "ok");
+          const bits = [];
+          if (result.imported) bits.push(`${result.imported} transaction${result.imported === 1 ? "" : "s"} imported`);
+          const details = (result.filled || []).filter((text) => !text.startsWith("demat "));
+          if (details.length) bits.push(`details filled (${details.join(", ")})`);
+          if (result.demat?.created) bits.push(`demat ${result.demat.client_id} saved to Masters`);
+          toast(bits.join(" · ") || "Nothing to import", "ok");
           await refreshData();
           openInvestmentDrawer(id);
         } catch (error) {

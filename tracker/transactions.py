@@ -30,6 +30,7 @@ TYPE_KEYS = ("type", "order type", "trade category")
 QUANTITY_KEYS = ("quantity", "qty", "units", "qty.")
 PRICE_KEYS = ("avg unit cost", "average price", "avg price", "market rate", "price", "rate", "trade price")
 VALUE_KEYS = ("value", "amount", "net amount", "value in inr", "total")
+EXCHANGE_KEYS = ("exchange",)
 
 SCRIP_KEYS = (
     "scrip name", "script name", "scrip", "symbol", "trading symbol",
@@ -226,6 +227,7 @@ def _kotak_pdf_rows(lines: list) -> dict:
                 "price": price,
                 "value": _number(match.group("total")),
                 "product": product,
+                "exchange": match.group("exchange"),
                 "trade_time": "",
             }
             rows.append(pending)
@@ -268,6 +270,7 @@ def _kotak_pdf_rows(lines: list) -> dict:
             "price": price,
             "value": round(value, 2),
             "product": item["product"],
+            "exchange": item["exchange"],
             "trade_type": "",
             "security": security,
             "isin": item["isin"],
@@ -279,7 +282,7 @@ def _kotak_pdf_rows(lines: list) -> dict:
             "download Reports → Transaction Statement as CSV or PDF; in ICICI Direct "
             "download the Equity Transaction Statement PDF."
         )
-    return {"scrips": sorted(securities), "rows": result, "skipped": skipped}
+    return {"scrips": sorted(securities), "rows": result, "skipped": skipped, "broker": "Kotak Securities"}
 
 
 def _icici_rows(lines: list) -> dict:
@@ -340,6 +343,7 @@ def _icici_rows(lines: list) -> dict:
             "price": round(price, 4),
             "value": round(value if value else quantity * price, 2),
             "product": match.group("exchange"),
+            "exchange": match.group("exchange"),
             "trade_type": "Cash",
             "security": security,
             "isin": isin,
@@ -350,7 +354,7 @@ def _icici_rows(lines: list) -> dict:
             "No buy or sell rows were found in this statement. "
             "Use the ICICI Equity Transaction Statement for the period that contains the trades."
         )
-    return {"scrips": sorted(set(scrips)), "rows": result, "skipped": skipped}
+    return {"scrips": sorted(set(scrips)), "rows": result, "skipped": skipped, "broker": "ICICI Direct"}
 
 
 def parse_transactions(blob: bytes, filename: str) -> dict:
@@ -381,7 +385,7 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
         ("date", DATE_KEYS), ("time", TIME_KEYS), ("kind", KIND_KEYS), ("product", PRODUCT_KEYS),
         ("trade_type", TYPE_KEYS), ("quantity", QUANTITY_KEYS),
         ("price", PRICE_KEYS), ("value", VALUE_KEYS), ("security", SCRIP_KEYS),
-        ("isin", ("isin",)),
+        ("isin", ("isin",)), ("exchange", EXCHANGE_KEYS),
     ):
         index = _column(labels, keys, used)
         if index is not None:
@@ -438,6 +442,7 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
             "price": round(price, 4),
             "value": round(value, 2),
             "product": product,
+            "exchange": _text(cell(row, "exchange")).upper(),
             "trade_type": trade_type,
             "security": security,
             "isin": _text(cell(row, "isin")).upper(),
@@ -452,4 +457,5 @@ def parse_transactions(blob: bytes, filename: str) -> dict:
         "scrips": sorted(securities) or ([scrip] if scrip else []),
         "rows": result,
         "skipped": skipped,
+        "broker": "Kotak Securities",
     }

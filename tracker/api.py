@@ -1125,12 +1125,14 @@ def _statement_creations(unmatched) -> list:
             status = "nosymbol"
             reason = "no NSE symbol matched the name — run Market data → Refresh, then import again"
         dates = [row["trade_date"] for row in rows]
+        exchanges = {str(row.get("exchange") or "").upper() for row in rows if row.get("exchange")}
         name = scrip["name"] if scrip is not None else group["security"]
         plan.append({
             "security": group["security"],
             "name": name,
             "type": "etf" if re.search(r"\betf\b|bees", name.lower()) else "stocks",
             "symbol": symbol,
+            "exchange": next(iter(exchanges)) if len(exchanges) == 1 else "NSE",
             "note": group["note"],
             "status": status,
             "reason": reason,
@@ -1152,6 +1154,65 @@ def _statement_creations(unmatched) -> list:
 
 def _public_creation(item: dict) -> dict:
     return {key: value for key, value in item.items() if key != "trade_rows"}
+
+
+CLIENT_ID_RE = re.compile(r"[A-Za-z0-9-]{4,24}")
+
+
+def _statement_client_code(filename: str) -> str:
+    """Kotak and ICICI name statements after the client code (…_ZS0WF_…, TRX-Equity_…_1149688.pdf)."""
+    stem = re.split(r"[\\/]", str(filename or ""))[-1].rsplit(".", 1)[0]
+    for token in re.split(r"[^A-Za-z0-9]+", stem):
+        if not CLIENT_ID_RE.fullmatch(token) or not re.search(r"\d", token):
+            continue
+        if re.fullmatch(r"\d{4}|\d{8}", token):
+            continue  # a year or a YYYYMMDD date from the file name
+        return token.upper()
+    return ""
+
+
+def _statement_demat(owner_id, broker: str, client_id: str):
+    if not owner_id or not client_id:
+        return None
+    row = db.query_one(
+        "SELECT * FROM demat_accounts WHERE owner_id = ? AND client_id = ? COLLATE NOCASE",
+        (owner_id, client_id),
+    )
+    if row is not None:
+        return row
+    return None
+
+
+def _statement_fills(item, symbol, broker, exchange, client_id, account=None):
+    """Blank details on a holding that the statement's broker and client code can supply."""
+    try:
+        details = json.loads(item["details"] or "{}")
+    except (TypeError, ValueError):
+        details = {}
+    filled = {}
+    labels = []
+    if broker and not details.get("broker"):
+        filled["broker"] = broker
+        labels.append(f"broker {broker}")
+    if exchange and not details.get("exchange"):
+        filled["exchange"] = exchange
+        labels.append(f"exchange {exchange}")
+    if item["type"] == "stocks" and symbol and not details.get("sector"):
+        sector = fields.equity.sector_for(symbol)
+        if sector:
+            filled["sector"] = sector
+            labels.append(f"sector {sector}")
+    if client_id and not details.get("demat_id"):
+        link = account if account is not None and account["owner_id"] == item["owner_id"] \
+            else _statement_demat(item["owner_id"], broker, client_id)
+        if link is not None:
+            filled["demat_id"] = link["id"]
+            filled["demat_account"] = link["client_id"]
+            filled["demat_label"] = fields._demat_label(link)
+            if not details.get("broker"):
+                filled["broker"] = link["broker"]
+            labels.append(f"demat {link['client_id']}")
+    return details, filled, labels
 
 
 @bp.post("/investments/<int:item_id>/transactions/import")
@@ -1200,6 +1261,13 @@ def import_transactions(item_id: int):
         for row in db.query("SELECT fingerprint FROM transactions WHERE investment_id = ?", (item_id,))
     }
     fresh = [row for row in rows if row["fingerprint"] not in existing]
+    broker_name = str(parsed.get("broker") or "")
+    client_code = _statement_client_code(upload.filename)
+    exchanges = {str(row.get("exchange") or "").upper() for row in rows if row.get("exchange")}
+    exchange = next(iter(exchanges)) if len(exchanges) == 1 else ""
+    fill_labels = _statement_fills(item, symbol, broker_name, exchange, client_code)[2] if matches else []
+    demat_known = bool(client_code and CLIENT_ID_RE.fullmatch(client_code) and broker_name in fields.BROKERS)
+    demat_saved = demat_known and _statement_demat(item["owner_id"], broker_name, client_code) is not None
     commit = str(request.form.get("commit") or "") in ("1", "true", "yes")
     buys = sum(1 for row in rows if row["kind"] == "buy")
     dates = sorted(row["trade_date"] for row in rows)
@@ -1220,6 +1288,13 @@ def import_transactions(item_id: int):
             sells=len(rows) - buys,
             first_date=dates[0] if dates else "",
             last_date=dates[-1] if dates else "",
+            broker=broker_name,
+            client_id=client_code,
+            fills=fill_labels,
+            demat=(
+                {"client_id": client_code, "broker": broker_name, "saved": demat_saved}
+                if demat_known else None
+            ),
             preview=[
                 {key: row[key] for key in ("trade_date", "kind", "quantity", "price", "value", "trade_type", "security")}
                 for row in fresh[:8]
@@ -1229,22 +1304,52 @@ def import_transactions(item_id: int):
     if warning and not matches:
         return jsonify(error=warning), 422
 
-    source = "icici" if (upload.filename or "").lower().endswith(".pdf") else "kotak"
+    source = "icici" if broker_name == "ICICI Direct" else "kotak"
     now = db.now()
     conn = db.get_db()
     imported = 0
     for row in fresh:
         imported += _insert_transaction(conn, item_id, row, source, actor["id"], now)
+    account = None
+    demat_created = False
+    if client_code and CLIENT_ID_RE.fullmatch(client_code) and broker_name in fields.BROKERS:
+        account = _statement_demat(item["owner_id"], broker_name, client_code)
+        if account is None:
+            account_id = conn.execute(
+                """INSERT INTO demat_accounts (owner_id, broker, client_id, label, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (item["owner_id"], broker_name, client_code, None, now, now),
+            ).lastrowid
+            account = conn.execute(
+                "SELECT * FROM demat_accounts WHERE id = ?", (account_id,)
+            ).fetchone()
+            demat_created = True
+            db.log_activity(
+                actor["id"], "created",
+                f"Added demat account {client_code} ({broker_name}) from a trade statement",
+                "demat", account_id,
+            )
+    details, changes, filled = _statement_fills(item, symbol, broker_name, exchange, client_code, account)
+    if changes:
+        conn.execute(
+            "UPDATE investments SET details = ?, updated_at = ? WHERE id = ?",
+            (json.dumps({**details, **changes}, ensure_ascii=False), now, item_id),
+        )
     conn.commit()
     if imported:
-        db.log_activity(
-            actor["id"], "imported",
-            f"Imported {imported} transaction(s) for {item['name']}", "investment", item_id,
-        )
+        message = f"Imported {imported} transaction(s) for {item['name']}"
+        if filled:
+            message += f", filling {', '.join(filled)}"
+        db.log_activity(actor["id"], "imported", message, "investment", item_id)
     updated = db.query_one("SELECT * FROM investments WHERE id = ?", (item_id,))
     return jsonify(
         imported=imported,
         duplicates=len(rows) - len(fresh),
+        filled=filled,
+        demat=(
+            {"client_id": client_code, "broker": broker_name, "created": demat_created}
+            if account is not None else None
+        ),
         investment=services.investment_payload(updated),
     )
 
@@ -1268,6 +1373,8 @@ def import_statement_transactions():
     bucket, unmatched, ambiguous, blank = _statement_buckets(parsed)
     creations = _statement_creations(unmatched)
     ready = [item for item in creations if item["status"] == "ready"]
+    broker_name = str(parsed.get("broker") or "")
+    client_code = _statement_client_code(upload.filename)
 
     existing = {}
     for row in db.query("SELECT investment_id, fingerprint FROM transactions"):
@@ -1282,6 +1389,12 @@ def import_statement_transactions():
         rows = entry["rows"]
         dates = sorted(row["trade_date"] for row in rows)
         buys = sum(1 for row in rows if row["kind"] == "buy")
+        exchanges = {str(row.get("exchange") or "").upper() for row in rows if row.get("exchange")}
+        entry["exchange"] = next(iter(exchanges)) if len(exchanges) == 1 else ""
+        _, _, fill_labels = _statement_fills(
+            entry["item"], entry["symbol"], broker_name, entry["exchange"], client_code
+        )
+        entry["fill_labels"] = fill_labels
         total_new += len(entry["fresh"])
         total_dupes += len(rows) - len(entry["fresh"])
         summaries.append({
@@ -1296,6 +1409,7 @@ def import_statement_transactions():
             "sells": len(rows) - buys,
             "first_date": dates[0] if dates else "",
             "last_date": dates[-1] if dates else "",
+            "fills": fill_labels,
         })
     summaries.sort(key=lambda s: s["name"].lower())
     total_new += sum(item["rows"] for item in ready)
@@ -1309,20 +1423,58 @@ def import_statement_transactions():
             owner_id = None
         if create_missing and ready and not _owner_exists(owner_id):
             return jsonify(error="Choose the member the new holdings belong to"), 422
-        source = "icici" if (upload.filename or "").lower().endswith(".pdf") else "kotak"
+        source = "icici" if broker_name == "ICICI Direct" else "kotak"
         now = db.now()
         conn = db.get_db()
+        account = None
+        demat_created = False
+        master_owner = None
+        if client_code and CLIENT_ID_RE.fullmatch(client_code) and broker_name in fields.BROKERS:
+            if create_missing and ready:
+                master_owner = owner_id
+            else:
+                owners = {entry["item"]["owner_id"] for entry in bucket.values()}
+                if len(owners) == 1:
+                    master_owner = next(iter(owners))
+        if master_owner:
+            account = _statement_demat(master_owner, broker_name, client_code)
+            if account is None:
+                account_id = conn.execute(
+                    """INSERT INTO demat_accounts (owner_id, broker, client_id, label, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (master_owner, broker_name, client_code, None, now, now),
+                ).lastrowid
+                account = conn.execute(
+                    "SELECT * FROM demat_accounts WHERE id = ?", (account_id,)
+                ).fetchone()
+                demat_created = True
+                db.log_activity(
+                    actor["id"], "created",
+                    f"Added demat account {client_code} ({broker_name}) from a trade statement",
+                    "demat", account_id,
+                )
         imported = 0
         created = []
+        filled = []
         for entry in bucket.values():
             for row in entry["fresh"]:
                 imported += _insert_transaction(conn, entry["item"]["id"], row, source, actor["id"], now)
+            details, changes, labels = _statement_fills(
+                entry["item"], entry["symbol"], broker_name, entry["exchange"], client_code, account
+            )
+            if changes:
+                conn.execute(
+                    "UPDATE investments SET details = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps({**details, **changes}, ensure_ascii=False), now, entry["item"]["id"]),
+                )
+                filled.append({"id": entry["item"]["id"], "name": entry["item"]["name"], "fills": labels})
         for item in ready if create_missing else []:
             payload = {
                 "type": item["type"],
                 "name": item["name"],
                 "symbol": item["symbol"],
-                "exchange": "NSE",
+                "exchange": item["exchange"] or "NSE",
+                "broker": broker_name,
                 "invested_amount": item["invested"],
                 "current_value": item["current"],
                 "start_date": item["first_date"],
@@ -1338,6 +1490,8 @@ def import_statement_transactions():
             data, errors = fields.validate_investment(payload)
             if errors:
                 continue
+            if account is not None:
+                fields._apply_demat(account, data["details"])
             new_id = conn.execute(
                 """INSERT INTO investments (public_id, owner_id, category, type, name, invested_amount,
                                             current_value, start_date, notes, details, created_by,
@@ -1362,9 +1516,18 @@ def import_statement_transactions():
             message = f"Imported {imported} transaction(s) across {holdings_touched} holding(s) from {upload.filename}"
             if created:
                 message += f", creating {len(created)} new holding(s)"
+            if filled:
+                message += f", filling blank details on {len(filled)} holding(s)"
+            if demat_created:
+                message += f", saving demat account {client_code}"
             db.log_activity(actor["id"], "imported", message, "investment", None)
         return jsonify(
             imported=imported, duplicates=total_dupes, created=created, holdings=summaries,
+            filled=filled,
+            demat=(
+                {"client_id": client_code, "broker": broker_name, "created": demat_created}
+                if account is not None else None
+            ),
         )
 
     return jsonify(
@@ -1374,6 +1537,8 @@ def import_statement_transactions():
         blank=blank,
         new=total_new,
         duplicates=total_dupes,
+        broker=broker_name,
+        client_id=client_code,
         holdings=summaries,
         create=[_public_creation(item) for item in creations],
         ambiguous=sorted(ambiguous.values(), key=lambda a: a["security"].lower()),

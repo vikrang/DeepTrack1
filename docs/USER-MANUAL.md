@@ -446,6 +446,15 @@ Open a **stock**, **ETF** or **mutual fund** holding and its drawer carries a
   before anything is written. A new holding's quantity and average cost come from this
   statement only, so a statement that starts mid-year can understate what is held —
   widen the dates or correct the quantity afterwards.
+
+  The statement also completes blank details. Its broker (Kotak Securities or ICICI
+  Direct) is filled on every matched holding whose **Broker / DP** is empty, together
+  with the sector and exchange where those are missing — existing values are never
+  overwritten. Kotak and ICICI name the file after your client code
+  (`Transaction_Statement_ZS0WF_…`, `TRX-Equity_…_1149688.pdf`), so that code is saved
+  as a demat account under **Masters** for the member you pick, and the new and matched
+  holdings are linked to it. The preview lists exactly which details will be filled
+  before you confirm.
 - **One holding at a time** — open the holding, click **Import broker trade report**
   and pick any of:
   - **Kotak Neo** → **Reports → Transaction Statement**, downloaded as **CSV** or
@@ -463,7 +472,10 @@ trade-statement box.
 
 Choose a date range that covers every trade from the first buy. DeepTrack shows a
 preview — trades found, how many are new, how many were already imported — and only
-writes them after you confirm. Anything with intraday or F&O product types is skipped.
+writes them after you confirm. The same file also fills the holding's blank broker,
+sector and demat account from the statement, and saves the statement's client code as
+a demat account under **Masters** if it isn't there yet. Anything with intraday or F&O
+product types is skipped.
 The report names its scrip, so if nothing in it matches the holding a warning appears
 and nothing is imported.
 
