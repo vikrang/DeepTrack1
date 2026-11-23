@@ -37,6 +37,15 @@ function fmtDate(iso) {
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function fmtDateTime(iso) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return esc(iso);
+  return date.toLocaleString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
 function todayIso() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -344,6 +353,8 @@ const state = {
   dashboard: null,
   income: null,
   corporate: null,
+  activity: null,
+  activityLoading: false,
   view: "dashboard",
   filters: { q: "", category: "", type: "", owner: "", sort: "updated", dir: "desc" },
   layout: "flat",
@@ -775,6 +786,7 @@ async function refreshDashboard() {
   await refreshData();
   renderUserChrome();
   if (state.view === "dashboard") renderDashboard();
+  else if (state.view === "income") renderIncome();
 }
 
 async function refreshAndRender() {
@@ -790,6 +802,8 @@ async function refreshAndRender() {
 const ROUTES = {
   dashboard: { title: "Dashboard", sub: "Family portfolio overview", render: renderDashboard },
   investments: { title: "Investments", sub: "Every holding in one ledger", render: renderInvestments },
+  income: { title: "Income", sub: "Dividends, interest and rent by financial year", render: renderIncome },
+  activity: { title: "Activity", sub: "Every change, kept in order", render: renderActivity },
   members: { title: "Members", sub: "People with access and their KYC", render: renderMembers },
   masters: { title: "Masters", sub: "Broker and demat accounts", render: renderMasters },
   market: { title: "Market data", sub: "NSE scrip master, bhavcopy and prices", render: renderMarket },
@@ -811,6 +825,7 @@ function route(force = false) {
   $("#page-sub").textContent = meta.sub;
   document.title = `${meta.title} · DeepTrack`;
   meta.render();
+  if (key === "activity") loadActivity(true);
   closeSidebar();
   if (force) $("#view").scrollTop = 0;
 }
@@ -857,7 +872,9 @@ function renderDashboard() {
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
   const pendingText = totals.pending_credits
     ? `${totals.pending_credits} credit${totals.pending_credits === 1 ? "" : "s"} worth ${compactMoney(totals.pending_credit_amount)} awaiting bank credit`
-    : "Dividends, interest and rent credited this year";
+    : totals.income_year
+      ? `${compactMoney(totals.income_year)} credited this financial year`
+      : "Open Income for expected interest estimates";
 
   const view = $("#view");
   view.innerHTML = `
@@ -890,7 +907,7 @@ function renderDashboard() {
         </div>
         <div class="kpi-foot">${pctText(totals.gain_pct)} overall return</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-link" data-nav="income" role="button" tabindex="0" title="Open income, checklist and estimates">
         <div class="kpi-label">${icon("calendar")} Income · ${esc(totals.income_year_label || fyLabel())}</div>
         <div class="kpi-value" title="${inr2(totals.income_year)}">${compactMoney(totals.income_year)}</div>
         <div class="kpi-foot">${esc(pendingText)}</div>
@@ -902,13 +919,8 @@ function renderDashboard() {
       ${assetClassCard(dash)}
       ${ownersCard(dash)}
       ${brokersCard(dash)}
-      ${incomeCard()}
-      ${creditChecklistCard()}
-      ${bankCard()}
-      ${isAdmin() ? corporateCard() : ""}
       ${holdingsCard(dash)}
       ${maturitiesCard(dash)}
-      ${activityCard(dash)}
     </div>`}
   `;
   hydrateIcons(view);
@@ -1301,6 +1313,151 @@ function corporateCard() {
     </section>`;
 }
 
+/* ============================================================
+   Income page
+   ============================================================ */
+
+function renderIncome() {
+  const view = $("#view");
+  if (!state.income) {
+    view.innerHTML = `<div class="card card-pad"><div class="skeleton" style="height:220px"></div></div>`;
+    return;
+  }
+  view.innerHTML = `
+    <div class="page-head">
+      <div>
+        <h2>Income · ${esc(state.income.year_label)}</h2>
+        <p>Dividends, interest and rent — recorded, pending and expected for the financial year.</p>
+      </div>
+    </div>
+    <div class="dash-grid">
+      ${incomeCard()}
+      ${estimateCard()}
+      ${creditChecklistCard()}
+      ${bankCard()}
+      ${isAdmin() ? corporateCard() : ""}
+    </div>`;
+  hydrateIcons(view);
+}
+
+function estimateCard() {
+  const est = state.income?.estimate;
+  if (!est) {
+    return `<section class="card card-pad span-5"><div class="skeleton" style="height:220px"></div></section>`;
+  }
+  const items = est.items || [];
+  const recorded = items.reduce((sum, item) => sum + (Number(item.recorded) || 0), 0);
+  return `
+    <section class="card card-pad span-5 estimate-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Expected income · ${esc(est.label)}</div>
+          <div class="card-sub">Interest from rate-bearing debt, 1 April to 31 March</div>
+        </div>
+        <span class="pill pill-muted">${est.count} estimated</span>
+      </div>
+      <div class="income-strip">
+        <div><span>Estimate</span><strong>${compactMoney(est.total)}</strong></div>
+        <div><span>Recorded</span><strong>${compactMoney(recorded)}</strong></div>
+        <div><span>Holdings</span><strong>${est.count}</strong></div>
+      </div>
+      ${items.length ? `<div class="estimate-list">
+        ${items.map((item) => `
+          <div class="estimate-row drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
+            <div class="estimate-main">
+              <div class="estimate-name">${esc(item.investment)}</div>
+              <div class="estimate-basis">${esc(item.basis)}${item.recorded ? ` · recorded ${inr(item.recorded)}` : ""}</div>
+              <div class="estimate-note">${esc(item.note)}</div>
+            </div>
+            <div class="estimate-amt">${inr2(item.amount)}</div>
+          </div>`).join("")}
+      </div>` : `<div class="empty compact">
+        <div class="empty-icon">${icon("trendUp")}</div>
+        <h3>No estimate for ${esc(est.label)}</h3>
+        <p>Fill the interest rate and dates on fixed deposits, RDs and bonds to see expected income.</p>
+      </div>`}
+      <p class="card-foot">Estimates use each holding's rate and dates; cumulative deposits accrue instead of paying out.${est.skipped ? ` ${est.skipped} debt holding${est.skipped === 1 ? "" : "s"} skipped for missing rate or amount.` : ""}</p>
+    </section>`;
+}
+
+/* ============================================================
+   Activity page
+   ============================================================ */
+
+function renderActivity() {
+  const view = $("#view");
+  const act = state.activity;
+  if (!act) {
+    view.innerHTML = `<div class="card card-pad"><div class="skeleton" style="height:220px"></div></div>`;
+    loadActivity(true);
+    return;
+  }
+  view.innerHTML = `
+    <div class="page-head">
+      <div>
+        <h2>Activity log</h2>
+        <p>Every change is kept — ${act.total.toLocaleString("en-IN")} entr${act.total === 1 ? "y" : "ies"} recorded so far.</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-secondary btn-sm" type="button" data-action="activity-refresh">${icon("refresh")} Refresh</button>
+      </div>
+    </div>
+    <div class="dash-grid">
+      <section class="card card-pad span-12">
+        ${act.items.length ? `<div class="table-wrap">
+          <table class="mini-table activity-table">
+            <thead><tr><th>When</th><th>Who</th><th>What changed</th><th class="hide-sm">Area</th></tr></thead>
+            <tbody>
+              ${act.items.map((item) => `
+                <tr>
+                  <td>
+                    <div class="cell-name">${fmtDateTime(item.created_at)}</div>
+                    <div class="cell-sub">${timeAgo(item.created_at)}</div>
+                  </td>
+                  <td>${esc(item.user)}</td>
+                  <td><div class="cell-name">${esc(item.summary)}</div></td>
+                  <td class="hide-sm"><span class="pill pill-muted">${esc(item.entity_type || item.action)}</span></td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>` : `<div class="empty compact">
+          <div class="empty-icon">${icon("clock")}</div>
+          <h3>No activity yet</h3>
+          <p>Every add, edit, import and income confirmation will be listed here and kept.</p>
+        </div>`}
+        <div class="activity-foot">
+          <span class="muted">Showing ${act.items.length} of ${act.total}</span>
+          ${act.has_more
+            ? `<button class="btn btn-secondary btn-sm" type="button" data-action="activity-more">Load older ${icon("chevronDown", "sm")}</button>`
+            : `<span class="muted">Start of the log</span>`}
+        </div>
+      </section>
+    </div>`;
+  hydrateIcons(view);
+}
+
+async function loadActivity(reset = false) {
+  if (state.activityLoading) return;
+  state.activityLoading = true;
+  const offset = reset || !state.activity ? 0 : state.activity.items.length;
+  try {
+    const data = await api(`/activity?limit=100&offset=${offset}`);
+    if (reset || !state.activity) {
+      state.activity = { items: [...data.activity], total: data.total, has_more: data.has_more };
+    } else {
+      state.activity.items.push(...data.activity);
+      state.activity.total = data.total;
+      state.activity.has_more = data.has_more;
+    }
+    if (state.view === "activity") renderActivity();
+  } catch (error) {
+    toast(error.message, "error");
+    if (state.view === "activity" && state.activity) renderActivity();
+  } finally {
+    state.activityLoading = false;
+  }
+}
+
 function holdingsCard(dash) {
   const rows = dash.top_holdings;
   return `
@@ -1352,29 +1509,6 @@ function maturitiesCard(dash) {
           </div>`;
         }).join("")}
       </div>` : `<p class="muted" style="font-size:13px;padding:8px 0">No maturities in the next year.</p>`}
-    </section>`;
-}
-
-function activityCard(dash) {
-  const iconFor = { created: "plus", updated: "edit", deleted: "trash", imported: "upload", apply: "refresh" };
-  return `
-    <section class="card card-pad span-12">
-      <div class="card-head">
-        <div>
-          <div class="card-title">Recent activity</div>
-          <div class="card-sub">What changed in this workspace</div>
-        </div>
-      </div>
-      ${dash.activity.length ? `<div class="feed">
-        ${dash.activity.map((a) => `
-          <div class="feed-row">
-            <div class="feed-dot">${icon(iconFor[a.action] || "list", "sm")}</div>
-            <div class="feed-main">
-              <div class="txt"><strong>${esc(a.user)}</strong> · ${esc(a.summary)}</div>
-              <div class="time">${timeAgo(a.created_at)}</div>
-            </div>
-          </div>`).join("")}
-      </div>` : `<p class="muted" style="font-size:13px;padding:8px 0">Actions will show up here as the family updates the portfolio.</p>`}
     </section>`;
 }
 
@@ -1533,6 +1667,7 @@ async function loadIncomeYear(year) {
     const data = await api(`/incomes?year=${encodeURIComponent(year)}`);
     state.income = data.income;
     if (state.view === "dashboard") renderDashboard();
+    else if (state.view === "income") renderIncome();
   } catch (error) {
     toast(error.message, "error");
     if (select) select.disabled = false;
@@ -4717,6 +4852,14 @@ async function handleClick(event) {
       break;
     case "fetch-corporate":
       await fetchCorporateActions();
+      break;
+    case "activity-more":
+      actionEl.disabled = true;
+      await loadActivity();
+      break;
+    case "activity-refresh":
+      state.activity = null;
+      await loadActivity(true);
       break;
     case "delete-income":
       await deleteIncomeEntry(id);

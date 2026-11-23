@@ -1,5 +1,6 @@
 """Read models shared by the JSON API: serialisation and dashboard maths."""
 
+import calendar
 import json
 from datetime import date, timedelta
 
@@ -342,12 +343,20 @@ def income_summary(year: int | None, viewer) -> dict:
         payload["days"] = (due - today).days if due else None
         checklist.append(payload)
 
+    recorded_interest = {}
+    for item in items:
+        if item["kind"] == "interest" and item["status"] == "credited":
+            recorded_interest[item["investment_id"]] = (
+                recorded_interest.get(item["investment_id"], 0.0) + item["amount"]
+            )
+
     return {
         "year": year,
         "year_label": fiscal_year_label(year),
         "years": [{"year": value, "label": fiscal_year_label(value)} for value in years],
         "items": items,
         "checklist": checklist,
+        "estimate": income_estimate(year, recorded_interest),
         "summary": {
             "credited": credited,
             "pending": pending,
@@ -358,6 +367,214 @@ def income_summary(year: int | None, viewer) -> dict:
             "by_investment": investments,
             "by_owner": owners,
         },
+    }
+
+
+ESTIMATE_TYPES = {"fd", "rd", "bonds", "ppf", "epf", "small_savings"}
+_COUPON_MONTHS = {"Annual": 12, "Semi-annual": 6, "Quarterly": 3}
+
+
+def _positive(value) -> float | None:
+    return float(value) if isinstance(value, (int, float)) and value > 0 else None
+
+
+def _inr(value) -> str:
+    """Indian digit grouping: 1,125,000 -> 11,25,000."""
+    whole = str(int(round(abs(float(value or 0)))))
+    if len(whole) > 3:
+        head, tail = whole[:-3], whole[-3:]
+        parts = []
+        while len(head) > 2:
+            parts.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            parts.insert(0, head)
+        whole = ",".join(parts) + "," + tail
+    return ("-" if float(value or 0) < 0 else "") + whole
+
+
+def _parse_day(value) -> date | None:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def _add_months(day: date, months: int) -> date:
+    total = day.year * 12 + day.month - 1 + months
+    year, month = divmod(total, 12)
+    month += 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def _estimate_fd(details, start, lo, hi):
+    principal = _positive(details.get("principal"))
+    rate = _positive(details.get("interest_rate"))
+    if not principal or not rate or not start:
+        return None
+    maturity = _parse_day(details.get("maturity_date"))
+    if maturity and maturity <= lo:
+        return None
+    days = (hi - lo).days
+    if days <= 0:
+        return None
+    if (details.get("payout") or "Cumulative") != "Cumulative":
+        amount = principal * rate / 100 * days / 365
+        return amount, f"{rate:g}% on ₹{_inr(principal)} for {days} days", "Interest is paid out, not reinvested"
+    compounding = details.get("compounding") or "Quarterly"
+    base = principal
+    if compounding == "Simple":
+        amount = principal * rate / 100 * days / 365
+    else:
+        per_year = {"Monthly": 12, "Quarterly": 4, "Half-yearly": 2, "Annual": 1}.get(compounding, 4)
+
+        def value(day):
+            years = max(0.0, (day - start).days / 365)
+            return principal * (1 + rate / 100 / per_year) ** (per_year * years)
+
+        if lo != start:
+            base = value(lo)
+        amount = value(hi) - base
+    return amount, f"{rate:g}% {compounding.lower()} compounding on ₹{_inr(base)}", "Interest accrues into the maturity value"
+
+
+def _estimate_rd(details, start, lo, hi):
+    monthly = _positive(details.get("monthly_amount"))
+    rate = _positive(details.get("interest_rate"))
+    if not monthly or not rate or not start:
+        return None
+    interest = 0.0
+    cursor = date(lo.year, lo.month, 1)
+    while cursor < hi:
+        nxt = _add_months(cursor, 1)
+        seg_start = max(cursor, lo)
+        seg_end = min(nxt, hi)
+        days = (seg_end - seg_start).days
+        deposited = 0
+        if seg_start >= start:
+            deposited = (seg_start.year - start.year) * 12 + seg_start.month - start.month + 1
+        if days > 0 and deposited > 0:
+            interest += monthly * deposited * rate / 100 / 365 * days
+        cursor = nxt
+    if interest <= 0:
+        return None
+    return interest, f"{rate:g}% on monthly deposits of ₹{_inr(monthly)}", "Approximate — each instalment earns from its deposit date"
+
+
+def _estimate_bonds(details, start, lo, hi):
+    quantity = _positive(details.get("quantity"))
+    face = _positive(details.get("face_value")) or _positive(details.get("purchase_price"))
+    rate = _positive(details.get("coupon_rate"))
+    maturity = _parse_day(details.get("maturity_date"))
+    if not quantity or not face or not rate:
+        return None
+    holding = quantity * face
+    step = _COUPON_MONTHS.get(details.get("interest_frequency") or "Semi-annual")
+    if step is None:
+        days = (hi - lo).days
+        if days <= 0:
+            return None
+        amount = holding * rate / 100 * days / 365
+        return amount, f"{rate:g}% on ₹{_inr(holding)} for {days} days", "Coupon dates not set — accrued at a daily rate"
+    if not maturity:
+        return None
+    coupon = holding * rate / 100 * step / 12
+    day = maturity
+    floor = start or lo
+    count = 0
+    while day >= floor:
+        if lo <= day <= hi:
+            count += 1
+        day = _add_months(day, -step)
+    if count == 0:
+        return None
+    per_year = 12 // step
+    basis = f"{count} coupon{'s' if count != 1 else ''} of ₹{_inr(coupon)} ({rate:g}% on ₹{_inr(holding)}, {per_year}x a year)"
+    return coupon * count, basis, "Coupons are cash credits when they pay out"
+
+
+def _estimate_small_savings(details, start, lo, hi):
+    deposit = _positive(details.get("deposit_amount"))
+    rate = _positive(details.get("interest_rate"))
+    if not deposit or not rate:
+        return None
+    days = (hi - lo).days
+    if days <= 0:
+        return None
+    amount = deposit * rate / 100 * days / 365
+    return amount, f"{rate:g}% on ₹{_inr(deposit)} for {days} days", "Simple-interest estimate"
+
+
+def _estimate_on_balance(details, row):
+    rate = _positive(details.get("interest_rate"))
+    balance = _positive(row["current_value"]) or _positive(row["invested_amount"])
+    if not rate or not balance:
+        return None
+    amount = balance * rate / 100
+    return amount, f"{rate:g}% on balance ₹{_inr(balance)}", "Estimated on today's balance; contributions during the year are not added"
+
+
+def income_estimate(year: int, recorded: dict | None = None) -> dict:
+    """Expected interest for a financial year from rate-bearing debt holdings."""
+    from_fy, to_fy = date(year - 1, 4, 1), date(year, 3, 31)
+    rows = db.query(
+        """SELECT i.id, i.name, i.type, i.start_date, i.details,
+                  i.invested_amount, i.current_value, u.name AS owner_name
+           FROM investments i JOIN users u ON u.id = i.owner_id
+           WHERE i.type IN (%s)
+           ORDER BY i.current_value DESC""" % ",".join("?" * len(ESTIMATE_TYPES)),
+        tuple(sorted(ESTIMATE_TYPES)),
+    )
+    items, skipped = [], 0
+    for row in rows:
+        try:
+            details = json.loads(row["details"] or "{}")
+        except (TypeError, ValueError):
+            details = {}
+        start = _parse_day(row["start_date"])
+        maturity = _parse_day(details.get("maturity_date"))
+        lo = max(from_fy, start) if start else from_fy
+        hi = min(to_fy, maturity) if maturity else to_fy
+        if hi <= lo:
+            continue
+        if row["type"] == "fd":
+            found = _estimate_fd(details, start, lo, hi)
+        elif row["type"] == "rd":
+            found = _estimate_rd(details, start, lo, hi)
+        elif row["type"] == "bonds":
+            found = _estimate_bonds(details, start, lo, hi)
+        elif row["type"] == "small_savings":
+            found = _estimate_small_savings(details, start, lo, hi)
+        else:
+            found = None if year < fiscal_year(date.today().isoformat()) else _estimate_on_balance(details, row)
+        if not found:
+            skipped += 1
+            continue
+        amount, basis, note = found
+        item = {
+            "investment_id": row["id"],
+            "investment": row["name"],
+            "owner": row["owner_name"],
+            "type": row["type"],
+            "type_label": fields.TYPES.get(row["type"], {}).get("label", row["type"]),
+            "kind": "interest",
+            "amount": round(amount, 2),
+            "basis": basis,
+            "note": note,
+        }
+        if recorded:
+            item["recorded"] = round(recorded.get(row["id"], 0.0), 2)
+        items.append(item)
+    items.sort(key=lambda item: item["amount"], reverse=True)
+    return {
+        "year": year,
+        "label": fiscal_year_label(year),
+        "from": from_fy.isoformat(),
+        "to": to_fy.isoformat(),
+        "items": items,
+        "count": len(items),
+        "total": round(sum(item["amount"] for item in items), 2),
+        "skipped": skipped,
     }
 
 
@@ -484,14 +701,6 @@ def dashboard() -> dict:
             })
     maturities.sort(key=lambda m: m["date"])
 
-    activity_rows = db.query(
-        """
-        SELECT a.*, u.name AS user_name
-        FROM activity a LEFT JOIN users u ON u.id = a.user_id
-        ORDER BY a.id DESC LIMIT 8
-        """
-    )
-
     top_gainers = sorted(items, key=lambda i: i["gain"], reverse=True)[:5]
     top_holdings = sorted(items, key=lambda i: i["current_value"], reverse=True)[:6]
 
@@ -541,14 +750,4 @@ def dashboard() -> dict:
             for i in top_holdings
         ],
         "maturities": maturities[:8],
-        "activity": [
-            {
-                "id": r["id"],
-                "user": r["user_name"] or "Someone",
-                "action": r["action"],
-                "summary": r["summary"],
-                "created_at": r["created_at"],
-            }
-            for r in activity_rows
-        ],
     }

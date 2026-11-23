@@ -17,22 +17,24 @@ Every task is written as "open this → click that → here's what you'll see."
 4. [First-time setup](#4-first-time-setup)
 5. [A quick tour of the screen](#5-a-quick-tour-of-the-screen)
 6. [Understanding the Dashboard](#6-understanding-the-dashboard)
-7. [Adding your first investment](#7-adding-your-first-investment)
-8. [Adding each type of investment](#8-adding-each-type-of-investment)
-9. [Viewing, editing and deleting a holding](#9-viewing-editing-and-deleting-a-holding)
-10. [Finding holdings: search, filter and sort](#10-finding-holdings)
-11. [Deleting several holdings at once](#11-deleting-several-holdings-at-once)
-12. [Importing from Excel (the easy bulk way)](#12-importing-from-excel)
-13. [Fixing rows that failed to import](#13-fixing-rows-that-failed-to-import)
-14. [Exporting and backing up your portfolio](#14-exporting-and-backing-up)
-15. [Adding and managing family members](#15-adding-and-managing-family-members)
-16. [Your profile, KYC and bank details](#16-your-profile-kyc-and-bank-details)
-17. [Masters: saving demat accounts](#17-masters-saving-demat-accounts)
-18. [Market data: live share prices](#18-market-data-live-share-prices)
-19. [Where your data lives](#19-where-your-data-lives)
-20. [Troubleshooting & FAQ](#20-troubleshooting--faq)
-21. [Using DeepTrack on your phone](#21-using-deeptrack-on-your-phone)
-22. [Glossary](#22-glossary)
+7. [The Income page: recorded, pending and expected income](#7-the-income-page)
+8. [The Activity log](#8-the-activity-log)
+9. [Adding your first investment](#9-adding-your-first-investment)
+10. [Adding each type of investment](#10-adding-each-type-of-investment)
+11. [Viewing, editing and deleting a holding](#11-viewing-editing-and-deleting-a-holding)
+12. [Finding holdings: search, filter and sort](#12-finding-holdings)
+13. [Deleting several holdings at once](#13-deleting-several-holdings-at-once)
+14. [Importing from Excel (the easy bulk way)](#14-importing-from-excel)
+15. [Fixing rows that failed to import](#15-fixing-rows-that-failed-to-import)
+16. [Exporting and backing up your portfolio](#16-exporting-and-backing-up)
+17. [Adding and managing family members](#17-adding-and-managing-family-members)
+18. [Your profile, KYC and bank details](#18-your-profile-kyc-and-bank-details)
+19. [Masters: saving demat accounts](#19-masters-saving-demat-accounts)
+20. [Market data: live share prices](#20-market-data-live-share-prices)
+21. [Where your data lives](#21-where-your-data-lives)
+22. [Troubleshooting & FAQ](#22-troubleshooting--faq)
+23. [Using DeepTrack on your phone](#23-using-deeptrack-on-your-phone)
+24. [Glossary](#24-glossary)
 
 ---
 
@@ -122,7 +124,7 @@ The person who does this becomes the first **Admin**.
 2. Click **Create workspace**.
 3. A toast says **Workspace created. Welcome!** and you land on the Dashboard.
 
-You can now add the rest of the family (see [section 15](#15-adding-and-managing-family-members)).
+You can now add the rest of the family (see [section 17](#17-adding-and-managing-family-members)).
 
 > **Just want to look around first?** On the empty Dashboard click **Load sample portfolio**.
 > It adds three demo members and 30 realistic holdings so you can explore every screen
@@ -134,8 +136,9 @@ You can now add the rest of the family (see [section 15](#15-adding-and-managing
 
 Once signed in you'll see three areas:
 
-- **Left sidebar** — the main menu: **Dashboard**, **Investments**, **Members**,
-  **Masters**, **Market data**, **Import / export**, **My profile**.
+- **Left sidebar** — the main menu: **Dashboard**, **Investments**, **Income**,
+  **Activity**, **Members**, **Masters**, **Market data**, **Import / export**,
+  **My profile**.
   (**Market data** and **Import / export** appear only for Admins.)
   At the bottom: a **Dark mode / Light mode** switch and **Sign out**.
 - **Top bar** — an **Add investment** button (Admins) and your profile picture.
@@ -161,7 +164,7 @@ name and shows the date plus "N holdings across N members."
 | **Portfolio value** | What everything is worth today. The small pill shows the gain since you invested. |
 | **Amount invested** | The total money you actually put in, across all holdings. |
 | **Unrealised gain** | Value minus invested, and the overall return %. "Unrealised" means it's a paper gain — you haven't sold. |
-| **Income · FY 20xx-xx** | Dividends, interest and rent credited in the current financial year (April–March). |
+| **Income · FY 20xx-xx** | Dividends, interest and rent credited in the current financial year (April–March). Click the card to open the Income page, which also carries the pending checklist and the year's expected interest. |
 
 **The cards and lists below:**
 
@@ -183,37 +186,20 @@ name and shows the date plus "N holdings across N members."
   portfolio. Click a broker to open the ledger filtered to it. Holdings with no broker are
   counted in the "not tagged" note at the bottom; tag them by editing a stock/ETF or by
   selecting several under **Investments** and clicking **Set broker**.
-- **Income earned** — pick a financial year from the dropdown and see income grouped by
-  investment with columns for dividend, interest, rent and other, plus what is still pending.
-  Admins can click **Record** to add a dividend, FD interest, rent or other receipt and mark it
-  as *Received in bank* or *Expected, not yet credited*. Click the disclosure line to see and
-  delete individual entries.
-- **Credit checklist** — every pending income entry with the member's bank account and the
-  expected date. An admin ticks an entry once the money actually reaches the bank; overdue
-  items are highlighted in red, items due within a week in amber.
-- **Member bank details** — where each member's dividends, interest and rent should land.
-  Account numbers are masked for other members and for viewers.
-- **Dividends & bonus** — admins pick a financial year (windows run 1 April to 31 March:
-  this FY, the previous FY, or the last 3/5 FYs) and click **Fetch actions**. DeepTrack
-  reads NSE corporate actions (Yahoo Finance as fallback) for every stock and ETF holding and
-  lists what it found. Tick the actions you want and confirm:
-  - **Dividends** become pending income entries (`shares × Rs per share`) in the checklist;
-    they move to *credited* when you tick them off.
-  - **Bonus / split actions** multiply the quantity and divide the average cost and current
-    price in one step. Bonus shares you already hold in your brokerage should be left
-    unticked.
-  Already-applied actions are skipped, and nothing changes until you confirm.
+- **Largest holdings** — your top holdings; tap a row to open its full details.
+- **Upcoming maturities** — deposits and bonds maturing in the next 12 months.
+
+Income, the credit checklist, bank details and dividend fetching live on the **Income** page
+([section 7](#7-the-income-page)), and the history of every change lives on the **Activity**
+page ([section 8](#8-the-activity-log)) — so the Dashboard stays focused on the portfolio.
 
 **Drill down from the dashboard:** almost everything is clickable. Click a number card to open
 all holdings (invested and gain cards sort by that column), click an asset class or an
 instrument type to open the ledger filtered to it, click a member row to see only that member's
-holdings, or click an income row, checklist item or bank row to jump to the holding or member
-behind it. The Investments page has an **All holdings / By member** toggle: *By member* groups
+holdings, click a broker to filter by it, or click a maturity row to open the holding.
+The Investments page has an **All holdings / By member** toggle: *By member* groups
 the ledger into member sections with each section's invested, value and gain subtotals, while
 filters and search keep working.
-- **Largest holdings** — your top holdings; tap a row to open its full details.
-- **Upcoming maturities** — deposits and bonds maturing in the next 12 months.
-- **Recent activity** — the last few changes (who added/edited/imported/applied what).
 
 Each investment's drawer also shows its own income for the selected financial year, with a
 **Record income** shortcut.
@@ -225,7 +211,94 @@ Each investment's drawer also shows its own income for the selected financial ye
 
 ---
 
-## 7. Adding your first investment
+## 7. The Income page
+
+Open **Income** in the sidebar, or click the **Income · FY 20xx-xx** number card on the
+Dashboard. Everything about money your holdings pay you lives on this page, so the
+Dashboard stays a calm portfolio overview.
+
+The page has these cards:
+
+- **Income earned** — pick a financial year (1 April to 31 March) from the dropdown.
+  The strip shows what is **Credited**, what is still **Pending credit** and how many
+  entries there are. The table groups income by holding with columns for dividend,
+  interest, rent and other, and a Pending column. Admins can click **Record** to add a
+  dividend, FD interest, rent or other receipt, marked *Received in bank* or *Expected,
+  not yet credited*. Open the disclosure line to see and delete individual entries.
+- **Expected income** — see *How the estimate works* below. This is a guide to interest
+  your debt holdings should earn in the year; it is not added to any total until you
+  record the actual credit.
+- **Credit checklist** — every pending entry with the member's bank account and the
+  expected date. An admin ticks an entry once the money reaches the bank; overdue items
+  are red, items due within a week amber.
+- **Member bank details** — where each member's dividends, interest and rent should land.
+  Account numbers are masked for viewers.
+- **Dividends & bonus** (Admins only) — pick a financial year window (this FY, the
+  previous FY, or the last 3/5 FYs, always 1 April to 31 March) and click **Fetch actions**.
+  DeepTrack reads NSE corporate actions, with Yahoo Finance as a fallback, for every stock
+  and ETF holding:
+  - **Dividends** become pending income entries (`shares × Rs per share`) in the checklist;
+    they move to *credited* when you tick them off.
+  - **Bonus / split actions** multiply the quantity and divide the average cost and current
+    price in one step. Bonus shares you already hold in your brokerage should be left
+    unticked.
+  Already-applied actions are skipped, and nothing changes until you confirm.
+
+### How the income estimate works
+
+For every debt holding with a rate filled in, DeepTrack estimates the interest that
+belongs to the selected financial year (1 April to 31 March), clipped to the holding's
+own start and maturity dates:
+
+| Instrument | What it uses | How the estimate is calculated |
+| --- | --- | --- |
+| **Fixed deposit — cumulative** | Rate, start date, compounding | Interest that accrues between 1 Apr and 31 Mar on the balance at the start of the year, compounded quarterly unless you chose otherwise. |
+| **Fixed deposit — paid out** | Rate, dates | Rate × days in the year ÷ 365. Interest leaves the deposit, so it does not compound. |
+| **Recurring deposit** | Monthly amount, rate, start | Each instalment earns from its own deposit date; months are summed. Approximate, since banks round differently. |
+| **Bonds, NCDs, G-Secs, SGB** | Quantity, face value, coupon rate, frequency | Coupons whose dates fall inside the year × coupon amount (rate × face value ÷ payments a year). Cumulative bonds with no frequency accrue daily instead. |
+| **Small savings (NSC, KVP, post office)** | Deposit, rate | Deposit × rate × days ÷ 365 — simple interest. |
+| **PPF, EPF / VPF** | Rate, current balance | Rate × today's balance. Shown only for the current financial year; contributions you will make during the year are not projected. |
+
+NPS, equity and anything with no rate set are left out. The card footer tells you how
+many debt holdings were skipped for missing rate or amount.
+
+**Worked examples for one full financial year:**
+
+| Holding | Calculation | Estimate |
+| --- | --- | --- |
+| FD ₹1,00,000 at 7%, interest paid out | 1,00,000 × 7% × 365 ÷ 365 | ₹7,000 |
+| FD ₹1,00,000 at 7%, cumulative quarterly | 1,00,000 × ((1 + 0.07 ÷ 4)^4 − 1) | ≈ ₹7,186 |
+| Bond 500 units, face ₹1,000, 7.18% semi-annual | 2 coupons × (5,00,000 × 7.18% ÷ 2) | ₹35,900 |
+| RD ₹10,000 a month at 7% (12 deposits) | Each instalment × 7% × its days ÷ 365, summed | ≈ ₹4,550 |
+| PPF ₹6,00,000 at 7.1% | 6,00,000 × 7.1% | ₹42,600 |
+
+The card shows the **Estimate** total, the **Recorded** interest you have already
+confirmed for those same holdings, and how many holdings were estimated. Each row shows
+the rate and basis used and a short note (for example "Coupons are cash credits when
+they pay out"); click a row to open the holding.
+
+---
+
+## 8. The Activity log
+
+The **Activity** page in the sidebar is the workspace's complete history. Every action an
+admin takes is written to a log that is kept indefinitely — it is not trimmed to the
+last few rows:
+
+- adding, editing or deleting a holding;
+- importing from Excel and applying corporate actions;
+- recording or deleting income, and marking a credit as received;
+- changes to members, brokers and market data.
+
+Each row shows **When** (date, time and how long ago), **Who** did it, **What changed**
+and the **Area** it belongs to. The page loads the newest 100 entries; click **Load older**
+to fetch the next 100, and **Refresh** for anything newer. Nothing is deleted
+automatically, and the log survives restarts and redeployments because it lives in the
+same database as your portfolio. Viewers can read it too.
+
+---
+
+## 9. Adding your first investment
 
 Let's add a fixed deposit as a worked example. The flow is the same for every type.
 
@@ -254,11 +327,11 @@ Let's add a fixed deposit as a worked example. The flow is the same for every ty
   like *"Filled in automatically."*
 
 > Not sure what a field means? Hover or read the small helper text under it, or check
-> the [type-by-type guide](#8-adding-each-type-of-investment) below.
+> the [type-by-type guide](#10-adding-each-type-of-investment) below.
 
 ---
 
-## 8. Adding each type of investment
+## 10. Adding each type of investment
 
 Pick the category, then the type. Here's what each one asks for and a tip for it.
 **Bold** fields are the ones that matter most.
@@ -272,7 +345,7 @@ the **Demat account** it sits in and, if you want the broker-wise dashboard, the
 saved demat account fills the broker automatically.
 > Tip: in the **Symbol** box type at least 3 letters (e.g. `REL`) and pick the company
 > from the suggestions — DeepTrack fills the name and exchange for you. This needs
-> market data loaded once (see [section 18](#18-market-data-live-share-prices)).
+> market data loaded once (see [section 20](#20-market-data-live-share-prices)).
 
 **Mutual funds** — SIPs and lump-sum funds.
 Enter **Scheme name**, **AMC**, **Folio number**, **Units held**, **Average NAV** and
@@ -333,7 +406,7 @@ earns from the next month, as in a passbook. Leave the amounts blank; type your 
 **Insurance policies** — Enter **Insurer**, **Policy type**, **Policy number**,
 **Sum assured** and **Premium**. (This records the policy's value, e.g. its fund value.)
 
-## 9. Viewing, editing and deleting a holding
+## 11. Viewing, editing and deleting a holding
 
 ### View the full picture
 
@@ -361,7 +434,7 @@ earns from the next month, as in a passbook. Leave the amounts blank; type your 
 
 ---
 
-## 10. Finding holdings
+## 12. Finding holdings
 
 The **Investments** page ("Every holding in one ledger") is a searchable list.
 
@@ -381,7 +454,7 @@ If nothing matches you'll see **No holdings match** — click **Clear filters** 
 
 ---
 
-## 11. Deleting several holdings at once
+## 13. Deleting several holdings at once
 
 *(Admins only.)*
 
@@ -402,7 +475,7 @@ If nothing matches you'll see **No holdings match** — click **Clear filters** 
 
 ---
 
-## 12. Importing from Excel
+## 14. Importing from Excel
 
 The fastest way to move a lot of holdings in at once — the easy bulk way. *(Admins only.)*
 
@@ -514,7 +587,7 @@ member + identifier (ISIN/symbol, folio, policy…) and shows the change before 
 
 ---
 
-## 13. Fixing rows that failed to import
+## 15. Fixing rows that failed to import
 
 If some rows have errors, don't retype the whole file — fix just the problem rows.
 
@@ -529,7 +602,7 @@ Every error message tells you exactly where to look, so you're never guessing.
 
 ---
 
-## 14. Exporting and backing up
+## 16. Exporting and backing up
 
 Exporting downloads your whole portfolio as an Excel workbook — handy as a **backup** or
 for offline editing. It's available to **everyone**, including Viewers.
@@ -549,7 +622,7 @@ holding's **Record ID** and **Owner**.
 
 ---
 
-## 15. Adding and managing family members
+## 17. Adding and managing family members
 
 *(Admins only.)* Open **Members** — "People with access and their KYC."
 
@@ -576,7 +649,7 @@ holding count, and masked KYC/bank details. A **KYC incomplete** pill flags miss
 
 ---
 
-## 16. Your profile, KYC and bank details
+## 18. Your profile, KYC and bank details
 
 Open **My profile** — "Your details, KYC and bank account." Even Viewers can edit this.
 
@@ -592,7 +665,7 @@ bank and branch from the free Razorpay IFSC directory. You can always type them 
 
 ---
 
-## 17. Masters: saving demat accounts
+## 19. Masters: saving demat accounts
 
 *(Admins only.)* **Masters** — "Broker and demat accounts" — lets you save each demat
 account **once**, then pick it from a dropdown when adding shares or ETFs.
@@ -611,7 +684,7 @@ account?**.
 
 ---
 
-## 18. Market data: live share prices
+## 20. Market data: live share prices
 
 *(Admins only.)* **Market data** — "NSE scrip master, bhavcopy and prices" — is what lets
 DeepTrack know today's share prices and autocomplete stock names.
@@ -643,7 +716,7 @@ so no manual download is needed there either.
 
 ---
 
-## 19. Where your data lives
+## 21. Where your data lives
 
 **The recommended setup is Firebase cloud storage.** When it is configured, every change
 you make — add, edit, delete, import — is written straight to **Google Firestore**, so your
@@ -701,7 +774,7 @@ copy, and/or copy the `data` folder somewhere safe for a full backup.
 
 ---
 
-## 20. Troubleshooting & FAQ
+## 22. Troubleshooting & FAQ
 
 **I don't see an Add / Import / Delete button.**
 You're probably a **Viewer**. Only Admins can change the portfolio. Ask an Admin, or check
@@ -753,7 +826,7 @@ Set up **Firebase cloud storage** (section 19) — then every change is saved to
 automatically and your data is live on every device. Without Firebase, run DeepTrack on a
 hosted web address with a persistent disk and move your holdings across with Export →
 Import. The banner on **Import / export** always tells you where the data currently lives.
-Full steps in [section 19](#19-where-your-data-lives).
+Full steps in [section 21](#21-where-your-data-lives).
 
 **The app won't open / I see "Please sign in" after refreshing.**
 Make sure the server is running (`start.bat`). If it's hosted, the session cookie settings
@@ -763,12 +836,12 @@ may need adjusting — that's in `docs/DEPLOYMENT.md`.
 Double-click `start.bat` in the DeepTrack folder and wait for *DeepTrack running*, then
 press **Retry**. When the server stops, DeepTrack shows that status page instead of a
 remembered old screen, so an out-of-date view can no longer appear. The tiny line at the
-bottom of the sidebar (**Build 2026.11.22e**) tells you which copy is loaded; after an
+bottom of the sidebar (**Build 2026.11.23b**) tells you which copy is loaded; after an
 update it should change. If it doesn't, refresh the page once (Ctrl+F5).
 
 ---
 
-## 21. Using DeepTrack on your phone
+## 23. Using DeepTrack on your phone
 
 DeepTrack is a responsive web app and can be installed on your phone's home screen — no
 separate mobile app to maintain. Every screen adapts: the sidebar turns into a slide-out
@@ -808,7 +881,7 @@ address from every device.
 
 ---
 
-## 22. Glossary
+## 24. Glossary
 
 | Term | Meaning |
 | --- | --- |

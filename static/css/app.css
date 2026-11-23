@@ -885,6 +885,21 @@ img { display: block; }
 .income-strip > div { padding: 9px 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; gap: 2px; }
 .income-strip span { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 700; }
 .income-strip strong { font-size: 16px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+.estimate-list { display: flex; flex-direction: column; max-height: 420px; overflow-y: auto; }
+.estimate-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 9px 6px; border-top: 1px solid var(--line-2); margin: 0 -6px; border-radius: 8px; cursor: pointer; transition: background 0.15s ease; }
+.estimate-row:first-child { border-top: 0; }
+.estimate-row:hover { background: var(--surface-2); }
+.estimate-row:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.estimate-main { min-width: 0; }
+.estimate-name { font-size: 12.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.estimate-basis { font-size: 11px; color: var(--ink-2); margin-top: 1px; }
+.estimate-note { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+.estimate-amt { font-size: 13px; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.activity-table td { vertical-align: top; }
+.activity-table tbody tr { cursor: default; }
+.activity-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line-2); font-size: 11.5px; }
 .kind-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 13px; }
 .kind-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface-2); font-size: 11px; color: var(--muted); font-weight: 600; }
 .kind-chip i { width: 7px; height: 7px; border-radius: 99px; }

@@ -1308,24 +1308,42 @@ def apply_corporate_actions():
 @bp.get("/activity")
 @login_required
 def activity():
-    limit = min(max(int(request.args.get("limit", 30)), 1), 200)
+    try:
+        limit = min(max(int(request.args.get("limit", 50)), 1), 200)
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except (TypeError, ValueError):
+        offset = 0
+    kind = request.args.get("kind", "").strip()
+    where, args = "", []
+    if kind:
+        where, args = " WHERE a.entity_type = ?", [kind]
+    total = db.query_one("SELECT COUNT(*) AS n FROM activity a" + where, tuple(args))["n"]
     rows = db.query(
         """SELECT a.*, u.name AS user_name FROM activity a
-           LEFT JOIN users u ON u.id = a.user_id
-           ORDER BY a.id DESC LIMIT ?""",
-        (limit,),
+           LEFT JOIN users u ON u.id = a.user_id"""
+        + where
+        + " ORDER BY a.id DESC LIMIT ? OFFSET ?",
+        tuple(args) + (limit, offset),
     )
-    return jsonify(activity=[
-        {
-            "id": r["id"],
-            "user": r["user_name"] or "Someone",
-            "action": r["action"],
-            "summary": r["summary"],
-            "created_at": r["created_at"],
-            "entity_type": r["entity_type"],
-        }
-        for r in rows
-    ])
+    return jsonify(
+        activity=[
+            {
+                "id": r["id"],
+                "user": r["user_name"] or "Someone",
+                "action": r["action"],
+                "summary": r["summary"],
+                "created_at": r["created_at"],
+                "entity_type": r["entity_type"],
+            }
+            for r in rows
+        ],
+        total=total,
+        offset=offset,
+        has_more=offset + len(rows) < total,
+    )
 
 
 # ---------------------------------------------------------------- excel
