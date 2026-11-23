@@ -264,6 +264,20 @@ const LOGO_ALIASES = {
   "h-g-infra": "hg-infra",
   "h-g-infra-engineering": "hg-infra",
   "narayana-hrudayalaya": "narayana-health",
+  "andra-pradesh-cda": "apcrda",
+  "andhra-pradesh-cda": "apcrda",
+  "ap-cda": "apcrda",
+  "crda": "apcrda",
+  "andhra-pradesh-crda": "apcrda",
+  "ap-crda": "apcrda",
+  "andhra-pradesh-capital-region-development-authority": "apcrda",
+  "amaravati": "apcrda",
+  "up-power": "uppcl",
+  "up-power-corporation": "uppcl",
+  "up-power-corporation-ltd": "uppcl",
+  "uttar-pradesh-power-corporation": "uppcl",
+  "uttar-pradesh-power-corporation-ltd": "uppcl",
+  "up-power-corp": "uppcl",
 };
 const LEGAL_TAIL = /-(limited|ltd|co|company|corp|corporation|inc|plc|pvt|private|india|enterprises|holdings)$/;
 function logoFor(name) {
