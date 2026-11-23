@@ -1110,6 +1110,12 @@ img { display: block; }
 .table .name-cell .sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; white-space: nowrap; }
 .table .num .sub { display: block; font-size: 10.5px; font-weight: 500; color: var(--muted); }
+.table .date-cell { white-space: nowrap; }
+.inv-table-card .table { min-width: 1100px; }
+.inv-table-card .table thead th,
+.inv-table-card .table tbody td { padding-left: 12px; padding-right: 12px; }
+.inv-table-card .table td.name-cell { min-width: 240px; }
+.inv-table-card .table td.details-cell { min-width: 160px; max-width: 180px; }
 .table .actions-cell { text-align: right; white-space: nowrap; width: 84px; }
 .table .actions-cell .icon-btn { width: 30px; height: 30px; border-radius: 8px; }
 .table .details-cell { font-size: 12px; color: var(--muted); max-width: 190px; }

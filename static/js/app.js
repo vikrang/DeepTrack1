@@ -860,24 +860,18 @@ function greeting() {
   return "Good evening";
 }
 
-const inrFull = (n) => {
-  const value = Number(n) || 0;
-  const paise = Math.abs(value - Math.round(value)) > 0.004;
-  return "₹" + nf(paise ? 2 : 0).format(value);
-};
-
 function gainCell(value, pct) {
   const positive = value >= 0;
   const color = positive ? "var(--ok)" : "var(--bad)";
   return `<div class="gain-cell" style="color:${color}">
-    <span class="gain-num">${positive ? "+" : "−"}${inrFull(Math.abs(value))}</span>
+    <span class="gain-num">${positive ? "+" : "−"}${inr(Math.abs(value))}</span>
     <span class="gain-meta">${icon(positive ? "trendUp" : "trendDown", "sm")}${pctText(pct)}</span>
   </div>`;
 }
 
 function valueNoteHtml(item) {
-  if (item.value_note === "principal + accrued interest") return `<div class="cell-sub">incl. accrued interest</div>`;
-  if (item.value_note === "principal only") return `<div class="cell-sub">interest paid out</div>`;
+  if (item.value_note === "principal + accrued interest") return `<div class="sub">incl. accrued interest</div>`;
+  if (item.value_note === "principal only") return `<div class="sub">interest paid out</div>`;
   return "";
 }
 
@@ -1946,7 +1940,7 @@ function renderInvestments() {
               <th class="hide-sm sortable" data-action="sort" data-sort="owner">Owner ${sortIndicator("owner")}</th>
               <th class="num sortable" data-action="sort" data-sort="invested">Invested ${sortIndicator("invested")}</th>
               <th class="num sortable" data-action="sort" data-sort="current">Current ${sortIndicator("current")}</th>
-              <th class="hide-sm">Maturity</th>
+              <th class="hide-sm date-cell">Maturity</th>
               <th class="num sortable" data-action="sort" data-sort="gain">Gain ${sortIndicator("gain")}</th>
               <th class="actions-cell"></th>
             </tr>
@@ -2035,7 +2029,7 @@ function investmentRowHtml(item) {
       </td>
       <td class="num">${inr(item.invested_amount)}</td>
       <td class="num">${inr(item.display_value)}${valueNoteHtml(item)}</td>
-      <td class="hide-sm">${item.maturity_date ? fmtDate(item.maturity_date) : `<span class="muted">—</span>`}</td>
+      <td class="hide-sm date-cell">${item.maturity_date ? fmtDate(item.maturity_date) : `<span class="muted">—</span>`}</td>
       <td class="num">${gainCell(item.display_gain, item.display_gain_pct)}</td>
       <td class="actions-cell">
         ${admin ? `
@@ -2065,7 +2059,7 @@ function investmentCardHtml(item) {
         ${item.broker ? `<span class="inv-broker">${brokerBadge(item.broker)}${esc(item.broker)}</span>` : ""}
         <span>Invested ${inr(item.invested_amount)}</span>
         ${item.maturity_date ? `<span>Matures ${fmtDate(item.maturity_date)}</span>` : ""}
-        <span style="color:${positive ? "var(--ok)" : "var(--bad)"};font-weight:650">${positive ? "+" : "−"}${inrFull(Math.abs(item.display_gain))}</span>
+        <span style="color:${positive ? "var(--ok)" : "var(--bad)"};font-weight:650">${positive ? "+" : "−"}${inr(Math.abs(item.display_gain))}</span>
       </div>
     </article>`;
 }
