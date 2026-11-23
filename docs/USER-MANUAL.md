@@ -17,7 +17,7 @@ Every task is written as "open this → click that → here's what you'll see."
 4. [First-time setup](#4-first-time-setup)
 5. [A quick tour of the screen](#5-a-quick-tour-of-the-screen)
 6. [Understanding the Dashboard](#6-understanding-the-dashboard)
-7. [The Income page: recorded, pending and expected income](#7-the-income-page)
+7. [The Income page: recorded, pending and credited income](#7-the-income-page)
 8. [The Activity log](#8-the-activity-log)
 9. [Adding your first investment](#9-adding-your-first-investment)
 10. [Adding each type of investment](#10-adding-each-type-of-investment)
@@ -225,9 +225,9 @@ The page has these cards:
   interest, rent and other, and a Pending column. Admins can click **Record** to add a
   dividend, FD interest, rent or other receipt, marked *Received in bank* or *Expected,
   not yet credited*. Open the disclosure line to see and delete individual entries.
-- **Expected income** — see *How the estimate works* below. This is a guide to interest
-  your debt holdings should earn in the year; it is not added to any total until you
-  record the actual credit.
+- **Interest credited** — see *How the income estimate works* below. This is a guide to
+  interest your debt holdings actually pay out in the year; it is not added to any total
+  until you record the credit.
 - **Credit checklist** — every pending entry with the member's bank account and the
   expected date. An admin ticks an entry once the money reaches the bank; overdue items
   are red, items due within a week amber.
@@ -246,36 +246,40 @@ The page has these cards:
 
 ### How the income estimate works
 
-For every debt holding with a rate filled in, DeepTrack estimates the interest that
-belongs to the selected financial year (1 April to 31 March), clipped to the holding's
-own start and maturity dates:
+DeepTrack counts **only the interest that is actually credited in the selected financial
+year** (1 April to 31 March). Interest that simply builds up inside a deposit is not
+income until it is paid, so cumulative deposits and bonds are counted once — on their
+maturity date — and only if that date falls inside the year:
 
-| Instrument | What it uses | How the estimate is calculated |
+| Instrument | What it uses | When it is counted |
 | --- | --- | --- |
-| **Fixed deposit — cumulative** | Rate, start date, compounding | Interest that accrues between 1 Apr and 31 Mar on the balance at the start of the year, compounded quarterly unless you chose otherwise. |
-| **Fixed deposit — paid out** | Rate, dates | Rate × days in the year ÷ 365. Interest leaves the deposit, so it does not compound. |
-| **Recurring deposit** | Monthly amount, rate, start | Each instalment earns from its own deposit date; months are summed. Approximate, since banks round differently. |
-| **Bonds, NCDs, G-Secs, SGB** | Quantity, face value, coupon rate, frequency | Coupons whose dates fall inside the year × coupon amount (rate × face value ÷ payments a year). Cumulative bonds with no frequency accrue daily instead. |
-| **Small savings (NSC, KVP, post office)** | Deposit, rate | Deposit × rate × days ÷ 365 — simple interest. |
-| **PPF, EPF / VPF** | Rate, current balance | Rate × today's balance. Shown only for the current financial year; contributions you will make during the year are not projected. |
+| **Fixed deposit — paid out** | Rate, dates | Every year of the deposit: rate × days in the year ÷ 365 on the original amount. Interest leaves the deposit, so it does not compound. |
+| **Fixed deposit — cumulative** | Rate, start, maturity, compounding | Once, on the maturity date: interest grown to maturity minus the amount deposited (compounded, or simple if that is what you chose). |
+| **Recurring deposit** | Monthly amount, rate, start, maturity | Once, on the maturity date: each instalment earns from its own deposit date to maturity, summed. |
+| **Bonds, NCDs, G-Secs, SGB — with a frequency** | Quantity, face value, coupon rate, frequency | Each coupon whose date falls inside the year, counted separately. |
+| **Bonds — cumulative (no frequency)** | Quantity, face value, rate, maturity | Once, on the maturity date: rate × amount × days held ÷ 365. |
+| **Small savings — MIS, SCSS** | Deposit, rate, dates | Paid out monthly or quarterly through the year, so every year of the holding counts. |
+| **Small savings — NSC, KVP, SSY, post office TD** | Deposit, rate, maturity | Once, on the maturity date: deposit × rate × days held ÷ 365. |
 
-NPS, equity and anything with no rate set are left out. The card footer tells you how
-many debt holdings were skipped for missing rate or amount.
+PPF, EPF / VPF, NPS, equity and anything with no rate set are not estimated: their
+interest accrues inside the balance and is only money once withdrawn. Holdings that will
+mature after the selected year appear under **Paid at maturity · outside this year** so
+you know where the interest has gone — it is not counted yet.
 
 **Worked examples for one full financial year:**
 
-| Holding | Calculation | Estimate |
+| Holding | Calculation | Counted in the year |
 | --- | --- | --- |
-| FD ₹1,00,000 at 7%, interest paid out | 1,00,000 × 7% × 365 ÷ 365 | ₹7,000 |
-| FD ₹1,00,000 at 7%, cumulative quarterly | 1,00,000 × ((1 + 0.07 ÷ 4)^4 − 1) | ≈ ₹7,186 |
+| FD ₹1,00,000 at 7%, interest paid out | 1,00,000 × 7% × 365 ÷ 365, every year | ₹7,000 |
+| FD ₹1,00,000 at 7%, 3 years cumulative, quarterly | Maturity value 1,00,000 × (1 + 0.07 ÷ 4)^12 − 1,00,000 — counted only in the maturity year | ≈ ₹23,144 that year |
 | Bond 500 units, face ₹1,000, 7.18% semi-annual | 2 coupons × (5,00,000 × 7.18% ÷ 2) | ₹35,900 |
-| RD ₹10,000 a month at 7% (12 deposits) | Each instalment × 7% × its days ÷ 365, summed | ≈ ₹4,550 |
-| PPF ₹6,00,000 at 7.1% | 6,00,000 × 7.1% | ₹42,600 |
+| RD ₹10,000 a month at 7% for 3 years | Each instalment × 7% × its days to maturity ÷ 365, summed — counted only in the maturity year | ≈ ₹14,400 that year |
+| NSC ₹1,00,000 at 7.7% for 5 years | 1,00,000 × 7.7% × 1,826 ÷ 365 — counted only in the maturity year | ≈ ₹38,500 that year |
 
-The card shows the **Estimate** total, the **Recorded** interest you have already
-confirmed for those same holdings, and how many holdings were estimated. Each row shows
-the rate and basis used and a short note (for example "Coupons are cash credits when
-they pay out"); click a row to open the holding.
+The card shows the **To be credited** total, the **Recorded** interest you have already
+confirmed for those same holdings, and how many credits there are. Each row shows the
+basis, the credit date (a maturity date, or *paid during the year* for coupons and
+fixed-payout deposits) and a short note; click a row to open the holding.
 
 ---
 

@@ -896,6 +896,10 @@ img { display: block; }
 .estimate-basis { font-size: 11px; color: var(--ink-2); margin-top: 1px; }
 .estimate-note { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
 .estimate-amt { font-size: 13px; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.estimate-deferred { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.estimate-deferred-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800; color: var(--muted); margin-bottom: 2px; }
+.estimate-deferred .estimate-row { padding: 7px 6px; }
+.estimate-deferred .estimate-name { font-weight: 650; color: var(--ink-2); }
 
 .activity-table td { vertical-align: top; }
 .activity-table tbody tr { cursor: default; }

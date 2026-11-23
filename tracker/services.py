@@ -370,8 +370,9 @@ def income_summary(year: int | None, viewer) -> dict:
     }
 
 
-ESTIMATE_TYPES = {"fd", "rd", "bonds", "ppf", "epf", "small_savings"}
+ESTIMATE_TYPES = {"fd", "rd", "bonds", "small_savings"}
 _COUPON_MONTHS = {"Annual": 12, "Semi-annual": 6, "Quarterly": 3}
+_PAYOUT_SAVINGS = {"Post Office MIS", "Senior Citizens' Savings Scheme (SCSS)"}
 
 
 def _positive(value) -> float | None:
@@ -407,116 +408,150 @@ def _add_months(day: date, months: int) -> date:
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
 
 
-def _estimate_fd(details, start, lo, hi):
+def _estimate_fd(details, start, fy_from, fy_to):
     principal = _positive(details.get("principal"))
     rate = _positive(details.get("interest_rate"))
     if not principal or not rate or not start:
         return None
     maturity = _parse_day(details.get("maturity_date"))
-    if maturity and maturity <= lo:
-        return None
-    days = (hi - lo).days
-    if days <= 0:
-        return None
     if (details.get("payout") or "Cumulative") != "Cumulative":
+        if start > fy_to:
+            return ("past",)
+        lo = max(fy_from, start)
+        hi = min(fy_to, maturity) if maturity else fy_to
+        days = (hi - lo).days
+        if days <= 0:
+            return ("past",) if maturity and maturity < fy_from else None
         amount = principal * rate / 100 * days / 365
-        return amount, f"{rate:g}% on ₹{_inr(principal)} for {days} days", "Interest is paid out, not reinvested"
-    compounding = details.get("compounding") or "Quarterly"
-    base = principal
-    if compounding == "Simple":
-        amount = principal * rate / 100 * days / 365
-    else:
-        per_year = {"Monthly": 12, "Quarterly": 4, "Half-yearly": 2, "Annual": 1}.get(compounding, 4)
-
-        def value(day):
-            years = max(0.0, (day - start).days / 365)
-            return principal * (1 + rate / 100 / per_year) ** (per_year * years)
-
-        if lo != start:
-            base = value(lo)
-        amount = value(hi) - base
-    return amount, f"{rate:g}% {compounding.lower()} compounding on ₹{_inr(base)}", "Interest accrues into the maturity value"
-
-
-def _estimate_rd(details, start, lo, hi):
-    monthly = _positive(details.get("monthly_amount"))
-    rate = _positive(details.get("interest_rate"))
-    if not monthly or not rate or not start:
+        return amount, f"{rate:g}% paid out on ₹{_inr(principal)} for {days} days", "Interest leaves the deposit at each payout", None
+    if not maturity or maturity <= start:
         return None
+    if maturity < fy_from:
+        return ("past",)
+    if maturity > fy_to:
+        return ("deferred", maturity)
+    stored = _positive(details.get("maturity_amount"))
+    if stored:
+        interest = stored - principal
+    else:
+        compounding = details.get("compounding") or "Quarterly"
+        years = (maturity - start).days / 365
+        if compounding == "Simple":
+            interest = principal * rate / 100 * years
+        else:
+            per_year = {"Monthly": 12, "Quarterly": 4, "Half-yearly": 2, "Annual": 1}.get(compounding, 4)
+            interest = principal * (1 + rate / 100 / per_year) ** (per_year * years) - principal
+    if interest <= 0:
+        return None
+    years = (maturity - start).days / 365
+    basis = f"{rate:g}% on ₹{_inr(principal)} for {years:.1f} years"
+    return interest, basis, "Interest is added to the principal and paid out with the maturity amount", maturity
+
+
+def _rd_interest(monthly: float, rate: float, start: date, until: date) -> float:
     interest = 0.0
-    cursor = date(lo.year, lo.month, 1)
-    while cursor < hi:
+    cursor = date(start.year, start.month, 1)
+    while cursor < until:
         nxt = _add_months(cursor, 1)
-        seg_start = max(cursor, lo)
-        seg_end = min(nxt, hi)
+        seg_start = max(cursor, start)
+        seg_end = min(nxt, until)
         days = (seg_end - seg_start).days
-        deposited = 0
-        if seg_start >= start:
-            deposited = (seg_start.year - start.year) * 12 + seg_start.month - start.month + 1
+        deposited = (seg_start.year - start.year) * 12 + seg_start.month - start.month + 1
         if days > 0 and deposited > 0:
             interest += monthly * deposited * rate / 100 / 365 * days
         cursor = nxt
+    return interest
+
+
+def _estimate_rd(details, start, fy_from, fy_to):
+    monthly = _positive(details.get("monthly_amount"))
+    rate = _positive(details.get("interest_rate"))
+    maturity = _parse_day(details.get("maturity_date"))
+    if not monthly or not rate or not start or not maturity or maturity <= start:
+        return None
+    if maturity < fy_from:
+        return ("past",)
+    if maturity > fy_to:
+        return ("deferred", maturity)
+    interest = _rd_interest(monthly, rate, start, maturity)
     if interest <= 0:
         return None
-    return interest, f"{rate:g}% on monthly deposits of ₹{_inr(monthly)}", "Approximate — each instalment earns from its deposit date"
+    basis = f"{rate:g}% on monthly deposits of ₹{_inr(monthly)} until maturity"
+    return interest, basis, "Paid out with the maturity amount; assumes every instalment was made", maturity
 
 
-def _estimate_bonds(details, start, lo, hi):
+def _estimate_bonds(details, start, fy_from, fy_to):
     quantity = _positive(details.get("quantity"))
     face = _positive(details.get("face_value")) or _positive(details.get("purchase_price"))
     rate = _positive(details.get("coupon_rate"))
-    maturity = _parse_day(details.get("maturity_date"))
     if not quantity or not face or not rate:
         return None
     holding = quantity * face
-    step = _COUPON_MONTHS.get(details.get("interest_frequency") or "Semi-annual")
+    maturity = _parse_day(details.get("maturity_date"))
+    frequency = details.get("interest_frequency")
+    step = _COUPON_MONTHS.get(frequency) if frequency else None
     if step is None:
-        days = (hi - lo).days
-        if days <= 0:
+        if not maturity or not start or maturity <= start:
             return None
+        if maturity < fy_from or start > fy_to:
+            return ("past",)
+        if maturity > fy_to:
+            return ("deferred", maturity)
+        days = (maturity - start).days
         amount = holding * rate / 100 * days / 365
-        return amount, f"{rate:g}% on ₹{_inr(holding)} for {days} days", "Coupon dates not set — accrued at a daily rate"
+        basis = f"{rate:g}% on ₹{_inr(holding)} for {days} days"
+        return amount, basis, "Cumulative — interest is paid with the redemption amount", maturity
     if not maturity:
         return None
+    if maturity < fy_from or (start and start > fy_to):
+        return ("past",)
     coupon = holding * rate / 100 * step / 12
     day = maturity
-    floor = start or lo
+    floor = start or fy_from
     count = 0
     while day >= floor:
-        if lo <= day <= hi:
+        if fy_from <= day <= fy_to:
             count += 1
         day = _add_months(day, -step)
     if count == 0:
         return None
     per_year = 12 // step
     basis = f"{count} coupon{'s' if count != 1 else ''} of ₹{_inr(coupon)} ({rate:g}% on ₹{_inr(holding)}, {per_year}x a year)"
-    return coupon * count, basis, "Coupons are cash credits when they pay out"
+    return coupon * count, basis, "Coupons are credited to the bank account when they pay out", None
 
 
-def _estimate_small_savings(details, start, lo, hi):
+def _estimate_small_savings(details, start, fy_from, fy_to):
     deposit = _positive(details.get("deposit_amount"))
     rate = _positive(details.get("interest_rate"))
     if not deposit or not rate:
         return None
-    days = (hi - lo).days
-    if days <= 0:
+    maturity = _parse_day(details.get("maturity_date"))
+    if details.get("scheme") in _PAYOUT_SAVINGS:
+        if start and start > fy_to:
+            return ("past",)
+        lo = max(fy_from, start) if start else fy_from
+        hi = min(fy_to, maturity) if maturity else fy_to
+        days = (hi - lo).days
+        if days <= 0:
+            return ("past",) if maturity and maturity < fy_from else None
+        amount = deposit * rate / 100 * days / 365
+        basis = f"{rate:g}% on ₹{_inr(deposit)} for {days} days"
+        return amount, basis, "Paid out monthly or quarterly to the bank account", None
+    if not start or not maturity or maturity <= start:
         return None
+    if maturity < fy_from:
+        return ("past",)
+    if maturity > fy_to:
+        return ("deferred", maturity)
+    days = (maturity - start).days
     amount = deposit * rate / 100 * days / 365
-    return amount, f"{rate:g}% on ₹{_inr(deposit)} for {days} days", "Simple-interest estimate"
-
-
-def _estimate_on_balance(details, row):
-    rate = _positive(details.get("interest_rate"))
-    balance = _positive(row["current_value"]) or _positive(row["invested_amount"])
-    if not rate or not balance:
-        return None
-    amount = balance * rate / 100
-    return amount, f"{rate:g}% on balance ₹{_inr(balance)}", "Estimated on today's balance; contributions during the year are not added"
+    basis = f"{rate:g}% on ₹{_inr(deposit)} for {days} days"
+    return amount, basis, "Cumulative — interest is paid with the maturity value", maturity
 
 
 def income_estimate(year: int, recorded: dict | None = None) -> dict:
-    """Expected interest for a financial year from rate-bearing debt holdings."""
-    from_fy, to_fy = date(year - 1, 4, 1), date(year, 3, 31)
+    """Income credited in a financial year, with cumulative interest shown at maturity."""
+    fy_from, fy_to = date(year - 1, 4, 1), date(year, 3, 31)
     rows = db.query(
         """SELECT i.id, i.name, i.type, i.start_date, i.details,
                   i.invested_amount, i.current_value, u.name AS owner_name
@@ -525,32 +560,30 @@ def income_estimate(year: int, recorded: dict | None = None) -> dict:
            ORDER BY i.current_value DESC""" % ",".join("?" * len(ESTIMATE_TYPES)),
         tuple(sorted(ESTIMATE_TYPES)),
     )
-    items, skipped = [], 0
+    items, deferred, skipped = [], [], 0
     for row in rows:
         try:
             details = json.loads(row["details"] or "{}")
         except (TypeError, ValueError):
             details = {}
         start = _parse_day(row["start_date"])
-        maturity = _parse_day(details.get("maturity_date"))
-        lo = max(from_fy, start) if start else from_fy
-        hi = min(to_fy, maturity) if maturity else to_fy
-        if hi <= lo:
-            continue
         if row["type"] == "fd":
-            found = _estimate_fd(details, start, lo, hi)
+            found = _estimate_fd(details, start, fy_from, fy_to)
         elif row["type"] == "rd":
-            found = _estimate_rd(details, start, lo, hi)
+            found = _estimate_rd(details, start, fy_from, fy_to)
         elif row["type"] == "bonds":
-            found = _estimate_bonds(details, start, lo, hi)
-        elif row["type"] == "small_savings":
-            found = _estimate_small_savings(details, start, lo, hi)
+            found = _estimate_bonds(details, start, fy_from, fy_to)
         else:
-            found = None if year < fiscal_year(date.today().isoformat()) else _estimate_on_balance(details, row)
-        if not found:
+            found = _estimate_small_savings(details, start, fy_from, fy_to)
+        if found is None:
             skipped += 1
             continue
-        amount, basis, note = found
+        if found[0] == "past":
+            continue
+        if found[0] == "deferred":
+            deferred.append({"investment": row["name"], "maturity": found[1].isoformat()})
+            continue
+        amount, basis, note, credited_on = found
         item = {
             "investment_id": row["id"],
             "investment": row["name"],
@@ -561,19 +594,23 @@ def income_estimate(year: int, recorded: dict | None = None) -> dict:
             "amount": round(amount, 2),
             "basis": basis,
             "note": note,
+            "credited_on": credited_on.isoformat() if credited_on else None,
         }
         if recorded:
             item["recorded"] = round(recorded.get(row["id"], 0.0), 2)
         items.append(item)
-    items.sort(key=lambda item: item["amount"], reverse=True)
+    items.sort(key=lambda item: (item["credited_on"] or "9999", item["investment"]))
+    deferred.sort(key=lambda entry: entry["maturity"])
     return {
         "year": year,
         "label": fiscal_year_label(year),
-        "from": from_fy.isoformat(),
-        "to": to_fy.isoformat(),
+        "from": fy_from.isoformat(),
+        "to": fy_to.isoformat(),
         "items": items,
         "count": len(items),
         "total": round(sum(item["amount"] for item in items), 2),
+        "deferred": deferred,
+        "deferred_count": len(deferred),
         "skipped": skipped,
     }
 

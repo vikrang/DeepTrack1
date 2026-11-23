@@ -1346,18 +1346,19 @@ function estimateCard() {
     return `<section class="card card-pad span-5"><div class="skeleton" style="height:220px"></div></section>`;
   }
   const items = est.items || [];
+  const deferred = est.deferred || [];
   const recorded = items.reduce((sum, item) => sum + (Number(item.recorded) || 0), 0);
   return `
     <section class="card card-pad span-5 estimate-card">
       <div class="card-head">
         <div>
-          <div class="card-title">Expected income · ${esc(est.label)}</div>
-          <div class="card-sub">Interest from rate-bearing debt, 1 April to 31 March</div>
+          <div class="card-title">Interest credited · ${esc(est.label)}</div>
+          <div class="card-sub">Only interest paid out between 1 April and 31 March</div>
         </div>
-        <span class="pill pill-muted">${est.count} estimated</span>
+        <span class="pill pill-muted">${est.count} credit${est.count === 1 ? "" : "s"}</span>
       </div>
       <div class="income-strip">
-        <div><span>Estimate</span><strong>${compactMoney(est.total)}</strong></div>
+        <div><span>To be credited</span><strong>${compactMoney(est.total)}</strong></div>
         <div><span>Recorded</span><strong>${compactMoney(recorded)}</strong></div>
         <div><span>Holdings</span><strong>${est.count}</strong></div>
       </div>
@@ -1366,17 +1367,27 @@ function estimateCard() {
           <div class="estimate-row drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
             <div class="estimate-main">
               <div class="estimate-name">${esc(item.investment)}</div>
-              <div class="estimate-basis">${esc(item.basis)}${item.recorded ? ` · recorded ${inr(item.recorded)}` : ""}</div>
+              <div class="estimate-basis">${esc(item.basis)}${item.credited_on ? ` · credited on ${fmtDate(item.credited_on)}` : " · paid during the year"}${item.recorded ? ` · recorded ${inr(item.recorded)}` : ""}</div>
               <div class="estimate-note">${esc(item.note)}</div>
             </div>
             <div class="estimate-amt">${inr2(item.amount)}</div>
           </div>`).join("")}
       </div>` : `<div class="empty compact">
         <div class="empty-icon">${icon("trendUp")}</div>
-        <h3>No estimate for ${esc(est.label)}</h3>
-        <p>Fill the interest rate and dates on fixed deposits, RDs and bonds to see expected income.</p>
+        <h3>Nothing credited in ${esc(est.label)}</h3>
+        <p>Only interest actually paid out in this financial year is counted. Fill the rate and dates on fixed deposits, RDs and bonds to see it.</p>
       </div>`}
-      <p class="card-foot">Estimates use each holding's rate and dates; cumulative deposits accrue instead of paying out.${est.skipped ? ` ${est.skipped} debt holding${est.skipped === 1 ? "" : "s"} skipped for missing rate or amount.` : ""}</p>
+      ${deferred.length ? `<div class="estimate-deferred">
+        <div class="estimate-deferred-head">Paid at maturity · outside ${esc(est.label)}</div>
+        ${deferred.map((item) => `
+          <div class="estimate-row drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
+            <div class="estimate-main">
+              <div class="estimate-name">${esc(item.investment)}</div>
+              <div class="estimate-basis">Interest added to the principal; the whole amount arrives on ${fmtDate(item.maturity)}</div>
+            </div>
+          </div>`).join("")}
+      </div>` : ""}
+      <p class="card-foot">Cumulative deposits and bonds roll interest into the principal and are counted once, on the maturity date. PPF, EPF and other accruing balances are not counted until the money is paid out.${est.skipped ? ` ${est.skipped} debt holding${est.skipped === 1 ? "" : "s"} skipped for missing rate or amount.` : ""}</p>
     </section>`;
 }
 
