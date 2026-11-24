@@ -353,12 +353,14 @@ function issuerBadge(item, cls = "") {
   const name = item?.issuer || issuerName(item);
   const symbol = symbolLogo(item);
   if (symbol) return logoMark(name || item?.symbol || "", symbol, `${cls} bsym`);
+  const nameLogo = name ? logoFor(name) : "";
+  if (nameLogo && stockSymbol(item)) return logoMark(name, nameLogo, `${cls} bsym`);
   if (stockSymbol(item)) {
     return markBadge(name || item?.symbol || "", issuerMark(name || item?.symbol || ""), {
       cls: `${cls} bsym`, auto: symbolLogoRemote(item),
     });
   }
-  const logo = name ? logoFor(name) : "";
+  const logo = nameLogo;
   if (logo) return logoMark(name, logo, cls);
   return name ? issuerBadgeFromName(name, cls) : typeBadge(item, cls);
 }
@@ -4859,6 +4861,7 @@ function openStatementPreview(file, data) {
       <strong class="txn-value">${c.rows} trade${c.rows === 1 ? "" : "s"}</strong>
     </div>`).join("");
   const ambiguous = data.ambiguous || [];
+  const conflicts = data.conflicts || [];
   const filledHoldings = holdings.filter((h) => (h.fills || []).length);
   const me = state.members.find((m) => m.is_self) || state.members[0];
   const brokerNote = data.broker
@@ -4894,6 +4897,7 @@ function openStatementPreview(file, data) {
       ${ownerSelect}` : ""}
     ${skippedCreations.length ? `<p class="muted small">${esc(skippedCreations.map((c) => `${c.name} — ${c.reason}`).join("; "))} — those scrips are not imported.</p>` : ""}
     ${ambiguous.length ? `<p class="muted small">${esc(ambiguous.map((a) => `${a.security} (${a.holdings.join(" / ")})`).join("; "))} — held by more than one member, so those rows are skipped. Import that scrip from the holding's own drawer instead.</p>` : ""}
+    ${conflicts.length ? `<div class="form-error">Skipped ${conflicts.length} holding${conflicts.length === 1 ? "" : "s"} — ${esc(conflicts.map((c) => `${c.name} is ${c.reason}`).join("; "))}. A ${esc(data.broker || "broker")} statement only posts to holdings tagged to that broker and account; import those scrips from the right broker's statement.</div>` : ""}
     ${data.blank ? `<p class="muted small">${data.blank} row${data.blank === 1 ? "" : "s"} skipped — no scrip name in the statement.</p>` : ""}
     ${data.skipped ? `<p class="muted small">${data.skipped} row${data.skipped === 1 ? "" : "s"} skipped — intraday, F&amp;O or missing data.</p>` : ""}
     ${!total ? `<p class="muted small">${filledHoldings.length ? "No new trades — the details below are still filled on import." : "Every trade in this statement is already imported, or nothing can be imported from it."}</p>` : ""}

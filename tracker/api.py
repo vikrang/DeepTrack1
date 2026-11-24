@@ -1323,8 +1323,27 @@ def _trade_holdings() -> list:
     return holdings
 
 
-def _statement_buckets(parsed):
-    """Sort the statement's rows into per-holding buckets, ambiguous scrips and new scrips."""
+def _statement_conflict(item, broker_name: str, client_code: str) -> str:
+    """Why this statement's broker/account cannot post to the holding, or "" when it can."""
+    try:
+        details = json.loads(item["details"] or "{}")
+    except (TypeError, ValueError):
+        details = {}
+    held_broker = str(details.get("broker") or "").strip()
+    held_account = str(details.get("demat_account") or "").strip()
+    if broker_name and held_broker and broker_name.lower() != held_broker.lower():
+        return f"tagged to {held_broker}"
+    if client_code and held_account and client_code.upper() != held_account.upper():
+        return f"linked to demat account {held_account}"
+    return ""
+
+
+def _statement_buckets(parsed, broker_name="", client_code=""):
+    """Sort the statement's rows into per-holding buckets, ambiguous scrips and new scrips.
+
+    Holdings tagged to a different broker or demat account are set aside so a
+    Kotak statement can never post trades to an ICICI-tagged holding.
+    """
     fallback = str(parsed.get("scrip") or "").strip()
     holdings = _trade_holdings()
     index = broker.ScripIndex()
@@ -1365,7 +1384,21 @@ def _statement_buckets(parsed):
             item, symbol = hits[0]
             entry = bucket.setdefault(item["id"], {"item": item, "symbol": symbol, "rows": []})
             entry["rows"].append(row)
-    return bucket, unmatched, ambiguous, blank
+    conflicts = []
+    for item_id in list(bucket):
+        entry = bucket[item_id]
+        reason = _statement_conflict(entry["item"], broker_name, client_code)
+        if reason:
+            conflicts.append({
+                "id": item_id,
+                "name": entry["item"]["name"],
+                "owner": entry["item"]["owner_name"],
+                "rows": len(entry["rows"]),
+                "reason": reason,
+            })
+            del bucket[item_id]
+    conflicts.sort(key=lambda c: c["name"].lower())
+    return bucket, unmatched, ambiguous, blank, conflicts
 
 
 def _statement_creations(unmatched) -> list:
@@ -1546,6 +1579,16 @@ def import_transactions(item_id: int):
     fresh = [row for row in rows if row["fingerprint"] not in existing]
     broker_name = str(parsed.get("broker") or "")
     client_code = _statement_client_code(upload.filename)
+    conflict = _statement_conflict(item, broker_name, client_code) if matches else ""
+    if conflict:
+        return jsonify(
+            error=(
+                f"This is a {broker_name or 'broker'} statement, but {item['name']} is {conflict}. "
+                "Import the statement from this holding's own broker, or clear the broker/demat "
+                "account on the holding first."
+            ),
+            conflict=conflict,
+        ), 422
     exchanges = {str(row.get("exchange") or "").upper() for row in rows if row.get("exchange")}
     exchange = next(iter(exchanges)) if len(exchanges) == 1 else ""
     fill_labels = _statement_fills(item, symbol, broker_name, exchange, client_code)[2] if matches else []
@@ -1653,11 +1696,13 @@ def import_statement_transactions():
     except ValueError as exc:
         return jsonify(error=str(exc)), 422
 
-    bucket, unmatched, ambiguous, blank = _statement_buckets(parsed)
-    creations = _statement_creations(unmatched)
-    ready = [item for item in creations if item["status"] == "ready"]
     broker_name = str(parsed.get("broker") or "")
     client_code = _statement_client_code(upload.filename)
+    bucket, unmatched, ambiguous, blank, conflicts = _statement_buckets(
+        parsed, broker_name, client_code
+    )
+    creations = _statement_creations(unmatched)
+    ready = [item for item in creations if item["status"] == "ready"]
 
     existing = {}
     for row in db.query("SELECT investment_id, fingerprint FROM transactions"):
@@ -1825,6 +1870,7 @@ def import_statement_transactions():
         holdings=summaries,
         create=[_public_creation(item) for item in creations],
         ambiguous=sorted(ambiguous.values(), key=lambda a: a["security"].lower()),
+        conflicts=conflicts,
     )
 
 

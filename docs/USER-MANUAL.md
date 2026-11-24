@@ -477,6 +477,13 @@ Open a **stock**, **ETF** or **mutual fund** holding and its drawer carries a
   as a demat account under **Masters** for the member you pick, and the new and matched
   holdings are linked to it. The preview lists exactly which details will be filled
   before you confirm.
+
+  A statement only posts to holdings tagged to the same broker and account. If a
+  holding's **Broker / DP** (or linked demat account) differs from the file's, those
+  rows are skipped and the preview names the holding and its current broker — a Kotak
+  statement never adds trades to an ICICI-tagged holding. Import that scrip from its
+  own broker's statement, or clear the broker/demat on the holding first. The
+  single-holding importer refuses the file outright with the same explanation.
 - **One holding at a time** — open the holding, click **Import broker trade report**
   and pick any of:
   - **Kotak Neo** → **Reports → Transaction Statement**, downloaded as **CSV** or
