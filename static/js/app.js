@@ -452,7 +452,7 @@ const state = {
   activity: null,
   activityLoading: false,
   view: "dashboard",
-  filters: { q: "", category: "", type: "", owner: "", sort: "updated", dir: "desc" },
+  filters: { q: "", category: [], type: [], owner: [], broker: [], sort: "updated", dir: "desc" },
   layout: "flat",
   importPreview: null,
   importResult: null,
@@ -2045,19 +2045,48 @@ function openCorporateModal(result) {
    Investments list
    ============================================================ */
 
+function fxList(value) {
+  if (Array.isArray(value)) return value.map(String).filter((v) => v !== "");
+  if (value === undefined || value === null || value === "") return [];
+  return [String(value)];
+}
+function fxMatch(value, selected) {
+  const list = fxList(selected);
+  return !list.length || list.includes(String(value ?? ""));
+}
+function fxBrokerMatch(item, selected) {
+  const list = fxList(selected);
+  if (!list.length) return true;
+  const broker = item.broker || "";
+  return broker ? list.includes(broker) : list.includes("__none__");
+}
+function fxActive(key) {
+  return fxList(state.filters[key]).length > 0;
+}
+function fxActiveCount() {
+  return ["category", "type", "owner", "broker"].filter(fxActive).length;
+}
+function fxSearchHit(item, needle) {
+  const haystack = [item.name, item.owner, item.type_label, item.notes, ...Object.values(item.details || {})]
+    .join(" ").toLowerCase();
+  return haystack.includes(needle);
+}
+function fxFacetMatch(item, skip = []) {
+  const f = state.filters;
+  if (!skip.includes("category") && !fxMatch(item.category, f.category)) return false;
+  if (!skip.includes("type") && !fxMatch(item.type, f.type)) return false;
+  if (!skip.includes("owner") && !fxMatch(item.owner_id, f.owner)) return false;
+  if (!skip.includes("broker") && !fxBrokerMatch(item, f.broker)) return false;
+  return true;
+}
+
 function filteredInvestments() {
   const f = state.filters;
   let items = state.investments.slice();
-  if (f.category) items = items.filter((i) => i.category === f.category);
-  if (f.type) items = items.filter((i) => i.type === f.type);
-  if (f.owner) items = items.filter((i) => String(i.owner_id) === String(f.owner));
+  items = items.filter((i) => fxFacetMatch(i));
   if (f.q) {
     const needle = f.q.toLowerCase();
-    items = items.filter((i) => {
-      const haystack = [i.name, i.owner, i.type_label, i.notes, ...Object.values(i.details || {})]
-        .join(" ").toLowerCase();
-      return haystack.includes(needle);
-    });
+    items = items.filter((i) => fxSearchHit(i, needle));
   }
   const sorters = {
     name: (i) => i.name.toLowerCase(),
@@ -2078,13 +2107,21 @@ function filteredInvestments() {
   return items;
 }
 
+function fxButton(key, label) {
+  const active = key === "all"
+    ? fxActiveCount() > 0
+    : (key === "details"
+      ? fxActive("category") || fxActive("type")
+      : fxActive(key));
+  return `<button class="fx-btn ${active ? "is-active" : ""}" type="button" data-action="open-filter" data-fcol="${key}" title="Filter by ${label}" aria-label="Filter by ${label}" aria-haspopup="dialog">${icon("filter", "sm")}</button>`;
+}
+
 function renderInvestments() {
+  closeHeaderFilter();
   const all = state.investments;
-  const counts = { "": all.length, equity: 0, debt: 0, other: 0 };
-  all.forEach((i) => { counts[i.category] = (counts[i.category] || 0) + 1; });
   const f = state.filters;
   const owners = new Set(all.map((i) => i.owner_id)).size;
-  const presentTypes = state.meta.types.filter((t) => all.some((i) => i.type === t.key));
+  const active = fxActiveCount();
 
   $("#view").innerHTML = `
     <div class="page-head">
@@ -2103,27 +2140,12 @@ function renderInvestments() {
         ${icon("search")}
         <input id="inv-search" type="search" placeholder="Search by name, owner, broker…" value="${esc(f.q)}" aria-label="Search investments">
       </div>
-      <div class="segmented" role="group" aria-label="Filter by category">
-        ${["", "equity", "debt", "other"].map((key) => {
-          const label = key ? categoryMeta(key).label : "All";
-          return `<button class="seg ${f.category === key ? "active" : ""}" type="button" data-action="filter-category" data-category="${key}">
-            ${esc(label)} <span class="count">${counts[key] || 0}</span>
-          </button>`;
-        }).join("")}
-      </div>
       <div class="toolbar-right">
+        <button class="btn btn-secondary btn-sm fx-top ${active ? "is-active" : ""}" type="button" data-action="open-filter" data-fcol="all">${icon("filter")} Filters${active ? ` <span class="fx-count">${active}</span>` : ""}</button>
         <div class="segmented" role="group" aria-label="Group holdings">
           <button class="seg ${state.layout === "flat" ? "active" : ""}" type="button" data-action="layout" data-layout="flat">All holdings</button>
           <button class="seg ${state.layout === "member" ? "active" : ""}" type="button" data-action="layout" data-layout="member">By member</button>
         </div>
-        <select class="select-compact" id="inv-type" data-filter="type" aria-label="Filter by type">
-          <option value="">All types</option>
-          ${presentTypes.map((t) => `<option value="${t.key}" ${f.type === t.key ? "selected" : ""}>${esc(t.label)}</option>`).join("")}
-        </select>
-        <select class="select-compact" id="inv-owner" data-filter="owner" aria-label="Filter by member">
-          <option value="">Everyone</option>
-          ${state.members.map((m) => `<option value="${m.id}" ${String(f.owner) === String(m.id) ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
-        </select>
         <select class="select-compact" id="inv-sort" data-filter="sort" aria-label="Sort holdings">
           <option value="updated" ${f.sort === "updated" ? "selected" : ""}>Recently updated</option>
           <option value="current" ${f.sort === "current" ? "selected" : ""}>Highest value</option>
@@ -2132,6 +2154,7 @@ function renderInvestments() {
           <option value="name" ${f.sort === "name" ? "selected" : ""}>Name A–Z</option>
           <option value="date" ${f.sort === "date" ? "selected" : ""}>Purchase date</option>
         </select>
+        ${active ? `<button class="btn btn-ghost btn-sm" type="button" data-action="clear-filters">Clear filters</button>` : ""}
       </div>
     </div>
 
@@ -2145,9 +2168,9 @@ function renderInvestments() {
           <thead>
             <tr>
               ${isAdmin() ? `<th class="select-cell"><input type="checkbox" id="select-all" aria-label="Select all holdings"></th>` : ""}
-              <th class="sortable" data-action="sort" data-sort="name">Holding ${sortIndicator("name")}</th>
-              <th class="hide-sm">Key details</th>
-              <th class="hide-sm sortable" data-action="sort" data-sort="owner">Owner ${sortIndicator("owner")}</th>
+              <th class="sortable" data-action="sort" data-sort="name">Holding ${sortIndicator("name")}${fxButton("broker", "broker")}</th>
+              <th class="hide-sm">Key details${fxButton("details", "type or category")}</th>
+              <th class="hide-sm sortable" data-action="sort" data-sort="owner">Owner ${sortIndicator("owner")}${fxButton("owner", "member")}</th>
               <th class="num sortable" data-action="sort" data-sort="invested">Invested ${sortIndicator("invested")}</th>
               <th class="num sortable" data-action="sort" data-sort="current">Current ${sortIndicator("current")}</th>
               <th class="num sortable" data-action="sort" data-sort="gain">Gain ${sortIndicator("gain")}</th>
@@ -2164,6 +2187,173 @@ function renderInvestments() {
   `;
   hydrateIcons($("#view"));
   updateInvestmentsTable();
+}
+
+const FX_COLUMNS = {
+  broker: { title: "Holding", groups: ["broker"] },
+  details: { title: "Key details", groups: ["category", "type"] },
+  owner: { title: "Owner", groups: ["owner"] },
+  all: { title: "All filters", groups: ["category", "type", "owner", "broker"] },
+};
+
+let fxPop = null;
+
+function fxGroupsFor(keys) {
+  const base = state.investments.filter((i) => fxFacetMatch(i, keys))
+    .filter((i) => !state.filters.q || fxSearchHit(i, state.filters.q.toLowerCase()));
+  const meta = state.meta || {};
+  const groups = [];
+  if (keys.includes("category")) {
+    const order = ["equity", "debt", "other"];
+    const present = order.filter((key) => base.some((i) => i.category === key));
+    groups.push({
+      key: "category",
+      title: "Category",
+      values: present.map((key) => ({
+        value: key,
+        label: categoryMeta(key).label,
+        count: base.filter((i) => i.category === key).length,
+      })),
+    });
+  }
+  if (keys.includes("type")) {
+    const types = (meta.types || []).map((t) => t.key);
+    const values = types
+      .map((key) => ({
+        value: key,
+        label: (meta.types.find((t) => t.key === key) || {}).label || key,
+        count: base.filter((i) => i.type === key).length,
+      }))
+      .filter((v) => v.count > 0);
+    groups.push({ key: "type", title: "Type", values });
+  }
+  if (keys.includes("owner")) {
+    const values = (state.members || [])
+      .map((m) => ({
+        value: String(m.id),
+        label: m.name,
+        count: base.filter((i) => String(i.owner_id) === String(m.id)).length,
+      }))
+      .filter((v) => v.count > 0);
+    groups.push({ key: "owner", title: "Member", values });
+  }
+  if (keys.includes("broker")) {
+    const names = [...new Set(base.map((i) => i.broker || ""))].sort((a, b) =>
+      (a || "~").localeCompare(b || "~"));
+    const values = names.map((name) => ({
+      value: name || "__none__",
+      label: name || "No broker",
+      count: base.filter((i) => (i.broker || "") === name).length,
+    }));
+    groups.push({ key: "broker", title: "Broker", values });
+  }
+  return groups.filter((group) => group.values.length);
+}
+
+function closeHeaderFilter() {
+  if (fxPop) {
+    fxPop.remove();
+    fxPop = null;
+  }
+  document.querySelectorAll(".fx-btn.is-open").forEach((btn) => btn.classList.remove("is-open"));
+}
+
+function fxGroupHtml(group) {
+  const selected = fxList(state.filters[group.key]).map(String);
+  const rows = group.values.map((v) => `
+    <label class="fx-row" data-text="${esc(String(v.label).toLowerCase())}">
+      <input type="checkbox" data-fx-val="${esc(v.value)}" ${selected.includes(String(v.value)) ? "checked" : ""}>
+      <span>${esc(v.label)}</span><em>${v.count}</em>
+    </label>`).join("");
+  const all = group.values.every((v) => selected.includes(String(v.value)));
+  return `
+    <div class="fx-group" data-key="${group.key}">
+      ${group.title ? `<div class="fx-group-title">${esc(group.title)}</div>` : ""}
+      <label class="fx-all"><input type="checkbox" data-fx-all ${all ? "checked" : ""}><span>Select all</span><em>${group.values.reduce((n, v) => n + v.count, 0)}</em></label>
+      <div class="fx-list">${rows}</div>
+    </div>`;
+}
+
+function fxSyncAll(groupEl) {
+  const boxes = [...groupEl.querySelectorAll(".fx-row:not(.hidden) input[data-fx-val]")];
+  const all = groupEl.querySelector("input[data-fx-all]");
+  if (!boxes.length || !all) return;
+  const checked = boxes.filter((box) => box.checked).length;
+  all.checked = checked === boxes.length;
+  all.indeterminate = checked > 0 && checked < boxes.length;
+}
+
+function openHeaderFilter(button) {
+  const key = button.dataset.fcol || "all";
+  const conf = FX_COLUMNS[key] || FX_COLUMNS.all;
+  closeHeaderFilter();
+  const groups = fxGroupsFor(conf.groups);
+  fxPop = document.createElement("div");
+  fxPop.className = "fx-pop";
+  fxPop.dataset.col = key;
+  fxPop.setAttribute("role", "dialog");
+  fxPop.setAttribute("aria-label", `Filter ${conf.title}`);
+  fxPop.innerHTML = `
+    <div class="fx-head">
+      <strong>Filter · ${esc(conf.title)}</strong>
+      <button class="fx-x" type="button" aria-label="Close">${icon("close", "sm")}</button>
+    </div>
+    <label class="fx-search">${icon("search", "sm")}<input type="search" placeholder="Search values…" aria-label="Search filter values"></label>
+    ${groups.length ? groups.map(fxGroupHtml).join("") : `<p class="fx-empty muted">No values to filter here.</p>`}
+    <div class="fx-foot">
+      <button class="btn btn-ghost btn-sm" type="button" data-fx-clear>Clear</button>
+      <button class="btn btn-primary btn-sm" type="button" data-fx-apply>Apply</button>
+    </div>`;
+  document.body.appendChild(fxPop);
+  hydrateIcons(fxPop);
+  button.classList.add("is-open");
+
+  const rect = button.getBoundingClientRect();
+  const width = fxPop.offsetWidth;
+  const height = fxPop.offsetHeight;
+  fxPop.style.left = `${Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8))}px`;
+  const below = rect.bottom + 6;
+  const top = below + height > window.innerHeight - 8
+    ? Math.max(8, window.innerHeight - height - 8)
+    : below;
+  fxPop.style.top = `${top}px`;
+  fxPop.style.maxHeight = `${Math.max(180, window.innerHeight - top - 8)}px`;
+
+  fxPop.querySelectorAll(".fx-group").forEach(fxSyncAll);
+  fxPop.querySelector(".fx-x").addEventListener("click", closeHeaderFilter);
+  const search = fxPop.querySelector(".fx-search input");
+  search.addEventListener("input", () => {
+    const needle = search.value.trim().toLowerCase();
+    fxPop.querySelectorAll(".fx-group").forEach((groupEl) => {
+      groupEl.querySelectorAll(".fx-row").forEach((row) => {
+        row.classList.toggle("hidden", Boolean(needle) && !row.dataset.text.includes(needle));
+      });
+      fxSyncAll(groupEl);
+    });
+  });
+  fxPop.querySelectorAll(".fx-group").forEach((groupEl) => {
+    groupEl.querySelector("input[data-fx-all]").addEventListener("change", (event) => {
+      groupEl.querySelectorAll(".fx-row:not(.hidden) input[data-fx-val]").forEach((box) => {
+        box.checked = event.target.checked;
+      });
+      fxSyncAll(groupEl);
+    });
+    groupEl.querySelectorAll("input[data-fx-val]").forEach((box) => {
+      box.addEventListener("change", () => fxSyncAll(groupEl));
+    });
+  });
+  fxPop.querySelector("[data-fx-apply]").addEventListener("click", () => {
+    groups.forEach((group) => {
+      state.filters[group.key] = [...fxPop.querySelectorAll(`.fx-group[data-key="${group.key}"] input[data-fx-val]:checked`)]
+        .map((box) => box.dataset.fxVal);
+    });
+    renderInvestments();
+  });
+  fxPop.querySelector("[data-fx-clear]").addEventListener("click", () => {
+    groups.forEach((group) => { state.filters[group.key] = []; });
+    renderInvestments();
+  });
+  search.focus({ preventScroll: true });
 }
 
 function sortIndicator(key) {
@@ -2300,12 +2490,12 @@ function investmentCardGroupHtml(group) {
 }
 
 function investmentsByMember(items) {
-  const ownerFilter = state.filters.owner ? String(state.filters.owner) : "";
+  const ownerFilter = fxList(state.filters.owner).map(String);
   const buckets = new Map();
   state.members.forEach((member) => {
     if (!member) return;
     const id = String(member.id);
-    if (ownerFilter && id !== ownerFilter) return;
+    if (ownerFilter.length && !ownerFilter.includes(id)) return;
     buckets.set(id, { member, items: [] });
   });
   items.forEach((item) => {
@@ -2316,7 +2506,7 @@ function investmentsByMember(items) {
     buckets.get(id).items.push(item);
   });
   const valueOf = (group) => group.items.reduce((sum, item) => sum + (Number(item.display_value) || 0), 0);
-  const groups = [...buckets.values()].filter((group) => group.items.length || ownerFilter);
+  const groups = [...buckets.values()].filter((group) => group.items.length || ownerFilter.includes(String(group.member.id)));
   return groups.sort(
     (a, b) => valueOf(b) - valueOf(a) || String(a.member.name).localeCompare(String(b.member.name)),
   );
@@ -5488,6 +5678,18 @@ function bindGlobalEvents() {
       badge.title = `${badge.dataset.logoName} — no logo found; click to add one`;
     }
   }, true);
+
+  document.addEventListener("pointerdown", (event) => {
+    if (!fxPop) return;
+    if (fxPop.contains(event.target)) return;
+    if (event.target instanceof Element && event.target.closest(".fx-btn")) return;
+    closeHeaderFilter();
+  }, true);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && fxPop) closeHeaderFilter();
+  });
+  window.addEventListener("resize", () => closeHeaderFilter());
+  window.addEventListener("scroll", () => closeHeaderFilter(), { passive: true });
 }
 
 async function handleClick(event) {
@@ -5503,9 +5705,10 @@ async function handleClick(event) {
   if (drill) {
     state.filters = {
       q: drill.dataset.search || "",
-      category: drill.dataset.category || "",
-      type: drill.dataset.type || "",
-      owner: drill.dataset.owner || "",
+      category: fxList(drill.dataset.category),
+      type: fxList(drill.dataset.type),
+      owner: fxList(drill.dataset.owner),
+      broker: [],
       sort: drill.dataset.sort || "updated",
       dir: "desc",
     };
@@ -5599,16 +5802,19 @@ async function handleClick(event) {
       renderInvestments();
       break;
     }
-    case "filter-category":
-      state.filters.category = actionEl.dataset.category;
-      renderInvestments();
+    case "open-filter":
+      if (fxPop && fxPop.dataset.col === actionEl.dataset.fcol) {
+        closeHeaderFilter();
+      } else {
+        openHeaderFilter(actionEl);
+      }
       break;
     case "layout":
       state.layout = actionEl.dataset.layout === "member" ? "member" : "flat";
       renderInvestments();
       break;
     case "clear-filters":
-      state.filters = { q: "", category: "", type: "", owner: "", sort: "updated", dir: "desc" };
+      state.filters = { q: "", category: [], type: [], owner: [], broker: [], sort: "updated", dir: "desc" };
       renderInvestments();
       break;
     case "export":

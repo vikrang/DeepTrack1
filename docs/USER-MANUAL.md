@@ -564,9 +564,13 @@ The **Investments** page ("Every holding in one ledger") is a searchable list.
 
 - **Search box** — type a name, owner, broker, folio, anything: placeholder is
   *"Search by name, owner, broker…"*. It looks across names, owners, types, brokers and notes.
-- **Category tabs** — **All / Equity / Debt / Other assets**, each with a count.
-- **Type dropdown** — **All types**, or narrow to (say) only Fixed deposits.
-- **Owner dropdown** — **Everyone**, or just one member's holdings.
+- **Column filter arrows** — a small funnel arrow sits beside **Holding** (broker),
+  **Key details** (category and type) and **Owner** (member), the way Excel puts one in
+  each column heading. Click it for a tidy list with tick boxes and per-value counts:
+  tick one or more values (the list narrows to those rows), use **Select all**, or type
+  in the search box to trim a long list, then **Apply**. An arrow turns brand-coloured
+  while its column is filtered. On phones and narrow windows a **Filters** button at the
+  top opens all the groups in one panel and shows how many filters are on.
 - **Sort dropdown** — **Recently updated**, **Highest value**, **Highest gain**,
   **Most invested**, **Name A–Z**, **Purchase date**. You can also click a column header
   to sort by it (an arrow ↑/↓ shows the direction).
