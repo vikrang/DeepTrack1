@@ -175,7 +175,11 @@ name and shows the date plus "N holdings across N members."
   listed company itself), with the broker shown as a small badge under the name instead.
   Logos for the companies already in the app ship with it — banks, insurers, AMCs,
   India Post, and every listed stock (stock logos come from Groww, keyed by NSE
-  symbol). Names are matched loosely, so "HDFC Bank Ltd" and "FD – Sundaram finance
+  symbol). Anything the app recognises but has no image for is fetched
+  automatically from the company's website icon the first time it is shown and kept
+  in the app's data folder, so the same logo loads instantly next time — covers every
+  bank in the bank list, NBFCs, housing-finance companies, insurers, brokers and
+  bond issuers. Names are matched loosely, so "HDFC Bank Ltd" and "FD – Sundaram finance
   – 12345" still find the right logo. To add or replace one, drop an image into
   `static/img/logos/` named after the company or its symbol (`equitas-bank.png`,
   `utkarsh.webp`); companies without an image keep their coloured initials.

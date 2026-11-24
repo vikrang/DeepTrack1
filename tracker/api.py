@@ -12,10 +12,10 @@ from io import BytesIO
 from urllib.parse import urlsplit
 
 import requests
-from flask import Blueprint, g, jsonify, request, send_file, session
+from flask import Blueprint, current_app, g, jsonify, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import broker, config, corporate, db, debtio, excelio, fields, firebase, market, seed, services, transactions
+from . import broker, config, corporate, db, debtio, excelio, fields, firebase, logos, market, seed, services, transactions
 from .validators import (
     parse_date,
     parse_number,
@@ -320,6 +320,8 @@ def me():
 # ---------------------------------------------------------------- meta
 
 _LOGO_EXTS = {".png", ".svg", ".webp", ".jpg", ".jpeg", ".ico"}
+_LOGO_DETAIL_KEYS = ("amc", "bank", "company_name", "issuer", "institution", "employer",
+                     "fund_manager", "insurer", "coin", "jeweller", "broker", "platform")
 
 
 def _issuer_logos() -> dict:
@@ -336,12 +338,67 @@ def _issuer_logos() -> dict:
     return logos
 
 
+def _logo_warm_names() -> list[str]:
+    names = list(fields.BANKS) + list(fields.DEPOSIT_ISSUERS) + list(fields.AMCS)
+    names += list(fields.INSURERS) + list(fields.BROKERS)
+    for row in db.query("SELECT details FROM investments WHERE details IS NOT NULL"):
+        try:
+            details = json.loads(row["details"] or "{}")
+        except Exception:
+            continue
+        if not isinstance(details, dict):
+            continue
+        for key in _LOGO_DETAIL_KEYS:
+            value = details.get(key)
+            if isinstance(value, str) and value.strip():
+                names.append(value.strip())
+    for row in db.query(
+        "SELECT DISTINCT broker FROM demat_accounts WHERE broker IS NOT NULL AND broker <> ''"
+    ):
+        names.append(row["broker"])
+    return names
+
+
+def warm_logos_async():
+    """Fetch any missing brand logos in the background (one thread per call)."""
+    app = current_app._get_current_object()
+    skip = set(_issuer_logos().keys())
+
+    def run():
+        with app.app_context():
+            try:
+                count = logos.warm(_logo_warm_names(), skip_slugs=skip)
+                if count:
+                    print(f"[logos] cached {count} brand logo(s)", flush=True)
+            except Exception as exc:
+                print(f"[logos] warm failed: {exc}", flush=True)
+
+    threading.Thread(target=run, name="logo-warm", daemon=True).start()
+
+
+@bp.get("/logo")
+@login_required
+def auto_logo():
+    """Serve (and lazily fetch) a logo for a bank / issuer / broker name."""
+    name = (request.args.get("name") or "").strip()[:120]
+    if not name:
+        return jsonify(error="Logo not available"), 404
+    entry = logos.ensure(name, skip_slugs=set(_issuer_logos().keys()))
+    if not entry:
+        return jsonify(error="Logo not available"), 404
+    path = logos.folder() / entry["file"]
+    response = send_file(path, conditional=True)
+    response.headers["Cache-Control"] = "private, max-age=604800"
+    return response
+
+
 @bp.get("/meta")
 @login_required
 def meta():
     user = current_user()
     payload = fields.meta()
-    payload["logos"] = _issuer_logos()
+    bundled = _issuer_logos()
+    payload["logos"] = {**logos.cached_urls(skip_slugs=set(bundled)), **bundled}
     payload["me"] = services.user_payload(user, user)
     payload["members"] = [
         {"id": m["id"], "name": m["name"], "email": m["email"], "role": m["role"]}
@@ -2604,6 +2661,8 @@ def import_commit():
         if updated:
             summary += f", updated {updated} existing holding(s)"
         db.log_activity(actor["id"], "imported", summary, "investment", None)
+    if imported or updated:
+        warm_logos_async()
     return jsonify(imported=imported, updated=updated, skipped=skipped, duplicates=duplicates)
 
 

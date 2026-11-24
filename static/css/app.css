@@ -607,15 +607,19 @@ img { display: block; }
   border-radius: clamp(13px, 1.7vw, 19px); font-size: clamp(13px, 1.8vw, 18px);
 }
 .drawer-head .dh-logo { flex: 0 0 auto; margin-top: 2px; }
-.drawer-head .dh-logo .bmark.blogo:not(.bsym) { padding: 3px; }
+.drawer-head .dh-logo .bmark.has-logo:not(.bsym) { padding: 3px; }
 .bmark.tmark.xl { font-size: clamp(12px, 1.6vw, 16px); }
 .bmark.sm { width: 18px; height: 18px; border-radius: 5px; font-size: 7.5px; }
 .bmark.tmark { font-size: 8.5px; letter-spacing: 0; }
 .bmark.tmark.sm { font-size: 7px; }
-.bmark.blogo { background: #fff; padding: 2px; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1); }
-.bmark.blogo img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 4px; }
-.bmark.blogo.bsym { padding: 0; }
-.bmark.blogo.bsym img { border-radius: inherit; }
+.bmark .bmark-initials, .bmark img[data-auto-logo] { grid-area: 1 / 1; }
+.bmark .bmark-initials { display: grid; place-items: center; width: 100%; height: 100%; }
+.bmark img[data-auto-logo] { display: none; width: 100%; height: 100%; object-fit: contain; border-radius: 4px; }
+.bmark.has-logo { background: #fff !important; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1); padding: 2px; }
+.bmark.has-logo .bmark-initials { display: none; }
+.bmark.has-logo img[data-auto-logo] { display: block; }
+.bmark.has-logo.bsym { padding: 0; }
+.bmark.has-logo.bsym img[data-auto-logo] { border-radius: inherit; }
 .sub-broker { display: inline-flex; align-items: center; gap: 4px; vertical-align: -3px; font-weight: 600; }
 .inv-card-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .inv-card-title strong { min-width: 0; }

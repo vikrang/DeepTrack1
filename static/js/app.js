@@ -89,6 +89,21 @@ function avatar(name, cls = "") {
   const color = AVATAR_COLORS[hashOf(name) % AVATAR_COLORS.length];
   return `<div class="avatar ${cls}" style="background:${color}" aria-hidden="true">${esc(initials(name))}</div>`;
 }
+function autoLogoUrl(name) {
+  const label = String(name || "").trim();
+  if (!label || label.toLowerCase() === "other") return "";
+  return `/api/logo?name=${encodeURIComponent(label)}`;
+}
+function markBadge(label, mark, options = {}) {
+  const { bg, fg, cls = "", extra = "", fallback = "#64748b", auto } = options;
+  const background = safeColor(bg, MARK_COLORS[hashOf(label) % MARK_COLORS.length] || fallback);
+  const src = auto === false ? "" : (typeof auto === "string" ? auto : autoLogoUrl(label));
+  const style = `background:${background};color:${fg || "#fff"}`;
+  if (!src) {
+    return `<span class="bmark ${cls}" style="${style}" title="${esc(label)}" aria-label="${esc(label)}">${esc(mark)}</span>`;
+  }
+  return `<span class="bmark ${cls} ${extra}" style="${style}" title="${esc(label)}" aria-label="${esc(label)}"><span class="bmark-initials">${esc(mark)}</span><img src="${esc(src)}" alt="" decoding="async" data-auto-logo></span>`;
+}
 const BROKER_BRANDS = {
   "Zerodha": { bg: "#387ed1", mark: "Z" },
   "Groww": { bg: "#00b386", mark: "G" },
@@ -110,7 +125,9 @@ function brokerBadge(name, cls = "") {
   const label = String(name || "").trim();
   if (!label) return "";
   const brand = BROKER_BRANDS[label] || {};
-  return `<span class="bmark ${cls}" style="background:${safeColor(brand.bg, "#64748b")};color:${brand.fg || "#fff"}" title="${esc(label)}" aria-label="${esc(label)}">${esc(brand.mark || initials(label))}</span>`;
+  return markBadge(label, brand.mark || initials(label), {
+    bg: brand.bg, fg: brand.fg, cls, auto: label === "Other" ? false : undefined,
+  });
 }
 const TYPE_BRANDS = {
   stocks: { bg: "#6366f1", mark: "EQ" },
@@ -307,29 +324,39 @@ function issuerBadgeFromName(name, cls = "") {
   const label = String(name || "").trim();
   if (!label) return "";
   const logo = logoFor(label);
-  if (logo) {
-    return `<span class="bmark blogo ${cls}" title="${esc(label)}" aria-label="${esc(label)}"><img src="${esc(logo)}" alt="" loading="lazy"></span>`;
-  }
+  if (logo) return logoMark(label, logo, cls);
   const known = ISSUER_BRANDS[label] || {};
-  const bg = known.bg || MARK_COLORS[hashOf(label) % MARK_COLORS.length];
-  return `<span class="bmark tmark ${cls}" style="background:${bg};color:${known.fg || "#fff"}" title="${esc(label)}" aria-label="${esc(label)}">${esc(known.mark || issuerMark(label))}</span>`;
+  return markBadge(label, known.mark || issuerMark(label), {
+    bg: known.bg, fg: known.fg, cls, extra: "tmark",
+  });
 }
 function brandSlug(name) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
-function symbolLogo(item) {
+function stockSymbol(item) {
   if (!item || (item.type !== "stocks" && item.type !== "etf")) return "";
-  const symbol = String(item.symbol || item.details?.symbol || "").trim();
+  return String(item.symbol || item.details?.symbol || "").trim();
+}
+function symbolLogo(item) {
+  const symbol = stockSymbol(item);
   return symbol ? state.meta?.logos?.[brandSlug(symbol)] || "" : "";
 }
+function symbolLogoRemote(item) {
+  const symbol = stockSymbol(item);
+  if (!symbol || symbol.length > 20) return "";
+  return `https://assets-netstorage.groww.in/stock-assets/logos2/${encodeURIComponent(symbol.toUpperCase())}.webp`;
+}
 function logoMark(label, logo, cls) {
-  return `<span class="bmark blogo ${cls}" title="${esc(label)}" aria-label="${esc(label)}"><img src="${esc(logo)}" alt="" loading="lazy"></span>`;
+  return markBadge(label, issuerMark(label), { cls, auto: logo });
 }
 function issuerBadge(item, cls = "") {
   const name = item?.issuer || issuerName(item);
   const symbol = symbolLogo(item);
-  if (symbol) {
-    return `<span class="bmark blogo bsym ${cls}" title="${esc(name || item?.symbol || "")}" aria-label="${esc(name || item?.symbol || "")}"><img src="${esc(symbol)}" alt="" loading="lazy"></span>`;
+  if (symbol) return logoMark(name || item?.symbol || "", symbol, `${cls} bsym`);
+  if (stockSymbol(item)) {
+    return markBadge(name || item?.symbol || "", issuerMark(name || item?.symbol || ""), {
+      cls: `${cls} bsym`, auto: symbolLogoRemote(item),
+    });
   }
   const logo = name ? logoFor(name) : "";
   if (logo) return logoMark(name, logo, cls);
@@ -5375,6 +5402,20 @@ function bindGlobalEvents() {
   });
 
   document.addEventListener("click", handleClick);
+
+  document.addEventListener("load", (event) => {
+    const img = event.target;
+    if (img instanceof HTMLImageElement && img.hasAttribute("data-auto-logo")) {
+      img.closest(".bmark")?.classList.add("has-logo");
+    }
+  }, true);
+  document.addEventListener("error", (event) => {
+    const img = event.target;
+    if (img instanceof HTMLImageElement && img.hasAttribute("data-auto-logo")) {
+      img.remove();
+      img.closest(".bmark")?.classList.remove("has-logo");
+    }
+  }, true);
 }
 
 async function handleClick(event) {

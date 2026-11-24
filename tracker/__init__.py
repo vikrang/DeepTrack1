@@ -44,6 +44,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(bp)
 
     _start_market_autosync(app, test_config)
+    _start_logo_warm(app, test_config)
 
     @app.get("/")
     def index():
@@ -76,7 +77,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             "default-src 'self'; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data: https://*.googleusercontent.com; "
+            "img-src 'self' data: blob: https://*.googleusercontent.com "
+            "https://assets-netstorage.groww.in; "
             "script-src 'self' https://www.gstatic.com https://apis.google.com; "
             "connect-src 'self' https://identitytoolkit.googleapis.com "
             "https://securetoken.googleapis.com https://www.googleapis.com "
@@ -141,3 +143,18 @@ def _start_market_autosync(app: Flask, test_config: dict | None) -> None:
                 print(f"DeepTrack market auto-sync skipped: {exc}", flush=True)
 
     threading.Thread(target=_run, name="market-autosync", daemon=True).start()
+
+
+def _start_logo_warm(app: Flask, test_config: dict | None) -> None:
+    """Fetch missing bank / issuer logos in the background after startup."""
+    if test_config and test_config.get("TESTING"):
+        return
+    import os
+
+    if (os.environ.get("DEEPTRACK_AUTO_LOGOS") or "1").strip().lower() in {"0", "false", "no", "off"}:
+        return
+
+    with app.app_context():
+        from .api import warm_logos_async
+
+        warm_logos_async()
