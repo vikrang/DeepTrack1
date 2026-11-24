@@ -152,7 +152,7 @@ function applyLogo(name, url) {
       badge.appendChild(img);
     }
     badge.classList.remove("no-logo");
-    badge.title = name;
+    badge.title = `${name} — click to change logo`;
     img.src = url;
   });
 }
@@ -387,11 +387,11 @@ function sameLogoName(a, b) {
 function issuerBadgeFromName(name, cls = "") {
   const label = String(name || "").trim();
   if (!label) return "";
-  const logo = logoFor(label);
+  const logo = logoFor(label) || autoLogoUrl(label);
   if (logo) return logoMark(label, logo, cls);
   const known = ISSUER_BRANDS[label] || {};
   return markBadge(label, known.mark || issuerMark(label), {
-    bg: known.bg, fg: known.fg, cls, extra: "tmark",
+    bg: known.bg, fg: known.fg, cls, extra: "tmark", auto: false,
   });
 }
 function brandSlug(name) {
@@ -5461,7 +5461,7 @@ function bindGlobalEvents() {
 
   document.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target : null;
-    const badge = target?.closest(".bmark.no-logo[data-logo-name]");
+    const badge = target?.closest(".bmark[data-logo-name]");
     if (!badge) return;
     event.preventDefault();
     event.stopPropagation();
@@ -5471,7 +5471,9 @@ function bindGlobalEvents() {
   document.addEventListener("load", (event) => {
     const img = event.target;
     if (img instanceof HTMLImageElement && img.hasAttribute("data-auto-logo")) {
-      img.closest(".bmark")?.classList.add("has-logo");
+      const badge = img.closest(".bmark");
+      badge?.classList.add("has-logo");
+      if (badge?.dataset.logoName) badge.title = `${badge.dataset.logoName} — click to change logo`;
     }
   }, true);
   document.addEventListener("error", (event) => {

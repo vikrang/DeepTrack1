@@ -424,6 +424,56 @@ def sniff(blob: bytes) -> str | None:
     return _sniff(blob)
 
 
+def _tidy(blob: bytes) -> tuple[bytes, str | None]:
+    """Crop plain white or transparent margins so the mark fills its tile."""
+    ext = _sniff(blob or b"")
+    if not ext or ext == ".svg":
+        return blob, ext
+    try:
+        from io import BytesIO
+        from PIL import Image
+
+        image = Image.open(BytesIO(blob))
+        image.load()
+        image = image.convert("RGBA")
+    except Exception:
+        return blob, ext
+    try:
+        width, height = image.size
+        if width < 8 or height < 8:
+            return blob, ext
+        pixels = image.load()
+        step = max(1, min(width, height) // 128)
+        left, top, right, bottom = width, height, 0, 0
+        found = False
+        for y in range(0, height, step):
+            for x in range(0, width, step):
+                red, green, blue, alpha = pixels[x, y]
+                white = red > 238 and green > 238 and blue > 238 and max(red, green, blue) - min(red, green, blue) <= 14
+                if alpha > 16 and not white:
+                    found = True
+                    left = min(left, x)
+                    top = min(top, y)
+                    right = max(right, x + 1)
+                    bottom = max(bottom, y + 1)
+        if not found:
+            return blob, ext
+        pad = max(1, int(max(width, height) * 0.02))
+        box = (
+            max(0, left - pad), max(0, top - pad),
+            min(width, right + pad), min(height, bottom + pad),
+        )
+        if box != (0, 0, width, height):
+            image = image.crop(box)
+        if max(image.size) > 256:
+            image.thumbnail((256, 256))
+        buffer = BytesIO()
+        image.save(buffer, "PNG", optimize=True)
+        return buffer.getvalue(), ".png"
+    except Exception:
+        return blob, ext
+
+
 def _download(domain: str, timeout: float = 5.0, strict: bool = False) -> tuple[bytes, str] | None:
     quoted = quote(domain)
     sources = [
@@ -485,6 +535,8 @@ def ensure(name: str, timeout: float = 6.0, skip_slugs: set | None = None) -> di
             _save_index(index)
             return None
         blob, ext = fetched
+        blob, tidy_ext = _tidy(blob)
+        ext = tidy_ext or ext
         filename = f"{key}{ext}"
         try:
             tmp = folder() / f".{filename}.tmp"
@@ -506,8 +558,10 @@ def ensure(name: str, timeout: float = 6.0, skip_slugs: set | None = None) -> di
 def save(name: str, blob: bytes) -> dict | None:
     """Store a logo the user picked by hand; it beats any later auto fetch."""
     key = slug(name)
-    ext = _sniff(blob or b"")
-    if not key or key in _SKIP or not ext:
+    if not key or key in _SKIP or not _sniff(blob or b""):
+        return None
+    blob, ext = _tidy(blob)
+    if not ext:
         return None
     with LOCK:
         index = _load_index()

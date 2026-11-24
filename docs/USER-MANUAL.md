@@ -183,9 +183,11 @@ name and shows the date plus "N holdings across N members."
   companies, insurers, brokers, bond issuers and a long list of listed companies
   (KCP, JK Tyre, SREI, Karur Vysya, DCB Bank…). Names are matched loosely, so
   "HDFC Bank Ltd" and "FD – Sundaram finance – 12345" still find the right logo.
-  If no logo can be found anywhere, the coloured initials stay and you can click
-  the badge to pick your own JPG, PNG, WEBP or PDF — it is saved with the workspace
-  and reused for every later holding in that company. You can also drop a file into
+  Click any company badge — whether it shows a bundled logo, a fetched one or
+  coloured initials — to replace the picture with your own JPG, PNG, WEBP or PDF,
+  as often as you like. White margins around the mark are trimmed automatically so
+  the logo fills the badge. Your picture is saved with the workspace and reused
+  for every later holding in that company. You can also drop a file into
   `static/img/logos/` named after the company or its symbol (`equitas-bank.png`,
   `utkarsh.webp`).
 - **Member-wise investment** — each person's invested amount, current value, gain and share

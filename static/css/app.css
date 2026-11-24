@@ -597,30 +597,34 @@ img { display: block; }
 
 .bmark {
   width: 22px; height: 22px; border-radius: 7px; flex: 0 0 auto;
-  display: inline-grid; place-items: center;
+  display: inline-grid; place-items: center; position: relative; overflow: hidden;
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.02em; line-height: 1;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 .bmark.lg { width: 34px; height: 34px; border-radius: 10px; font-size: 11px; }
 .bmark.xl {
-  width: clamp(46px, 6vw, 64px); height: clamp(46px, 6vw, 64px);
-  border-radius: clamp(13px, 1.7vw, 19px); font-size: clamp(13px, 1.8vw, 18px);
+  width: clamp(52px, 6.5vw, 72px); height: clamp(52px, 6.5vw, 72px);
+  border-radius: clamp(14px, 1.8vw, 21px); font-size: clamp(13px, 1.8vw, 18px);
 }
 .drawer-head .dh-logo { flex: 0 0 auto; margin-top: 2px; }
-.drawer-head .dh-logo .bmark.has-logo:not(.bsym) { padding: 3px; }
+.drawer-head .dh-logo .bmark.has-logo:not(.bsym) { padding: 1px; }
 .bmark.tmark.xl { font-size: clamp(12px, 1.6vw, 16px); }
 .bmark.sm { width: 18px; height: 18px; border-radius: 5px; font-size: 7.5px; }
 .bmark.tmark { font-size: 8.5px; letter-spacing: 0; }
 .bmark.tmark.sm { font-size: 7px; }
-.bmark .bmark-initials, .bmark img[data-auto-logo] { grid-area: 1 / 1; }
-.bmark .bmark-initials { display: grid; place-items: center; width: 100%; height: 100%; }
-.bmark img[data-auto-logo] { display: none; width: 100%; height: 100%; object-fit: contain; border-radius: 4px; }
-.bmark.has-logo { background: #fff !important; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1); padding: 2px; }
+.bmark .bmark-initials { display: grid; place-items: center; width: 100%; height: 100%; grid-area: 1 / 1; }
+.bmark img[data-auto-logo] {
+  display: none; position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; border-radius: inherit;
+}
+.bmark.has-logo { background: #fff !important; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1); padding: 0; }
 .bmark.has-logo .bmark-initials { display: none; }
-.bmark.has-logo img[data-auto-logo] { display: block; }
+.bmark.has-logo img[data-auto-logo] { display: block; border-radius: inherit; }
 .bmark.has-logo.bsym { padding: 0; }
 .bmark.has-logo.bsym img[data-auto-logo] { border-radius: inherit; }
-.bmark.no-logo { cursor: pointer; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
+.bmark[data-logo-name] { cursor: pointer; }
+.bmark[data-logo-name]:hover { filter: brightness(1.06); }
+.bmark.no-logo { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
 .bmark.no-logo:hover { filter: brightness(1.12); }
 .sub-broker { display: inline-flex; align-items: center; gap: 4px; vertical-align: -3px; font-weight: 600; }
 .inv-card-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
