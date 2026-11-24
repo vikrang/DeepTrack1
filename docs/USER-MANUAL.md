@@ -237,19 +237,24 @@ The page has these cards:
   interest, rent and other, and a Pending column. Admins can click **Record** to add a
   dividend, FD interest, rent or other receipt, marked *Received in bank* or *Expected,
   not yet credited*. Open the disclosure line to see and delete individual entries.
-- **Interest credited** — see *How the income estimate works* below. It shows only credits
-  **up to today** (the run date): payout interest accrued day by day, coupons already
-  paid, and cumulative deposits that matured by today. Anything later is in **Upcoming
-  credits**.
-- **Income calendar** — a daily heatmap of the financial year. **Year** zoom shows all
-  twelve months; click a month to zoom into it, then tap a day to see the credits — or
-  projected accruals — on that date. Solid shading is credited money, a dashed outline
-  is projected.
-- **Upcoming credits** — every future credit after today, grouped financial year by
-  financial year with a total for each FY, including cumulative deposits that mature then.
+- **Interest credited** — see *How the income estimate works* below. It shows only money
+  **paid up to today** (the run date): coupons and periodic interest payouts already made,
+  and cumulative deposits that matured by today with **Payout** as their maturity
+  instruction. Anything later is in **Upcoming credits**.
+- **Payment calendar** — a heatmap of the financial year built from **actual cash credits**
+  only: coupons, interest payouts, recorded income, and maturity payments on their payout
+  date (principal + interest for cumulative deposits). Interest is never spread day by day.
+  **Year** zoom shows all twelve months; click a month, then tap a day to see exactly what
+  was credited or is projected. Solid shading is credited money, a dashed outline is
+  projected, and auto-renewals appear in the day detail as a dashed **renewal reminder —
+  not paid out**.
+- **Upcoming credits** — every future payment after today, grouped financial year by
+  financial year with a total for each FY. Only cash counts towards each FY total; a
+  maturity marked **Renew** is listed with an **Auto Renewal** tag and its value is kept
+  out of the cash total.
 - **Cumulative deposits** — principal, interest and **maturity value (principal +
   interest)** for every cumulative FD, RD, NSC and cumulative bond, with the maturity
-  date and its financial year.
+  date, its financial year and the **Payout / Auto renewal** instruction.
 - **Credit checklist** — every pending entry with the member's bank account and the
   expected date. An admin ticks an entry once the money reaches the bank; overdue items
   are red, items due within a week amber.
@@ -268,21 +273,24 @@ The page has these cards:
 
 ### How the income estimate works
 
-DeepTrack counts only the interest **credited by the run date** inside the selected
-financial year (1 April to 31 March). Payout interest is counted day by day up to today;
-the rest of the year, and every later year, appears under **Upcoming credits** split
-financial year by financial year. Cumulative deposits and bonds roll interest into the
-principal, so they are counted once — on their maturity date — and are also listed in
-the **Cumulative deposits** card with principal, interest and maturity value:
+DeepTrack counts only cash **paid by the run date** inside the selected financial year
+(1 April to 31 March). Interest is never accrued day by day in the estimate: a payout
+instrument earns once per interest date, at the rate and frequency saved on the holding.
+The rest of the year, and every later year, appears under **Upcoming credits** split
+financial year by financial year. Cumulative deposits are counted once on their maturity
+date — but only when their **Maturity instructions** say **Payout**; **Renew** keeps the
+whole maturity value out of income and shows it as an **Auto Renewal** reminder instead.
+They are also listed in the **Cumulative deposits** card with principal, interest and
+maturity value:
 
 | Instrument | What it uses | When it is counted |
 | --- | --- | --- |
-| **Fixed deposit — paid out** | Rate, dates | Rate × days from 1 April (or the start date) to today ÷ 365 on the original amount; later days move to Upcoming credits. Interest leaves the deposit, so it does not compound. |
-| **Fixed deposit — cumulative** | Rate, start, maturity, compounding | Once, on the maturity date: interest grown to maturity minus the amount deposited (compounded, or simple if that is what you chose). |
-| **Recurring deposit** | Monthly amount, rate, start, maturity | Once, on the maturity date: each instalment earns from its own deposit date to maturity, summed. |
-| **Bonds, NCDs, G-Secs, SGB — with a frequency** | Quantity, face value, coupon rate, frequency | Each coupon whose date falls on or before today is credited; later coupons are in Upcoming credits, in the FY of their payout. |
+| **Fixed deposit — Fixed (interest paid out)** | Principal, rate, interest frequency, start, maturity | One payment per interest date: principal × rate × months per period ÷ 12. The broken last period up to maturity is paid with the maturity amount. Nothing accrues between dates. |
+| **Fixed deposit — cumulative** | Rate, start, maturity, compounding | Once, on the maturity date: interest grown to maturity minus the amount deposited (compounded, or simple if that is what you chose), and only when the instruction is Payout. |
+| **Recurring deposit** | Monthly amount, rate, start, maturity | Once, on the maturity date: every instalment earns from its own deposit date to maturity, summed — assuming all instalments are made. |
+| **Bonds, NCDs, G-Secs, SGB — with a frequency** | Quantity, face value, coupon rate, frequency | Each coupon on its own date; coupons already paid are credited, later ones sit in Upcoming credits in the FY of their payout. |
 | **Bonds — cumulative (no frequency)** | Quantity, face value, rate, maturity | Once, on the maturity date: rate × amount × days held ÷ 365. |
-| **Small savings — MIS, SCSS** | Deposit, rate, dates | Paid out monthly or quarterly through the year, so the year is counted day by day up to today. |
+| **Small savings — MIS, SCSS** | Deposit, rate, dates | Monthly (MIS) or quarterly (SCSS) payouts on their actual dates — the same pattern as a fixed-payout FD. |
 | **Small savings — NSC, KVP, SSY, post office TD** | Deposit, rate, maturity | Once, on the maturity date: deposit × rate × days held ÷ 365. |
 
 PPF, EPF / VPF, NPS, equity and anything with no rate set are not estimated: their
@@ -294,17 +302,19 @@ maturity date, and in the **Cumulative deposits** card with the maturity value.
 
 | Holding | Calculation | Counted in the year |
 | --- | --- | --- |
-| FD ₹1,00,000 at 7%, interest paid out | 1,00,000 × 7% × 365 ÷ 365, every year | ₹7,000 for a past year; for the current year the part up to today, with the rest in Upcoming credits |
-| FD ₹1,00,000 at 7%, 3 years cumulative, quarterly | Maturity value 1,00,000 × (1 + 0.07 ÷ 4)^12 − 1,00,000 — counted only in the maturity year | ≈ ₹23,144 that year |
+| FD ₹1,00,000 at 7.5%, Fixed, quarterly payouts | 1,00,000 × 7.5% ÷ 4 = ₹1,875 per interest date | ₹7,500 in a full year: four payments on their dates, no daily accrual |
+| FD ₹2,00,000 at 7.5%, Fixed, quarterly, 1 Apr 2025 to 31 Mar 2027 | Four quarterly coupons of ₹3,750 plus a broken final period (89 days × 2,00,000 × 7.5% ÷ 365 = ₹3,658) paid with the maturity amount on 31 Mar 2027 | ₹18,658 in the maturity FY; the stub is never skipped and never double-counted |
+| FD ₹1,00,000 at 7%, 3 years cumulative, quarterly, Payout | Maturity value 1,00,000 × (1 + 0.07 ÷ 4)^12 − 1,00,000 — counted once in the maturity year | ≈ ₹23,144 that year; principal + interest on the payment calendar |
+| FD ₹1,00,000 at 7%, 3 years cumulative, **Renew** | Same maturity value, but marked Auto renewal | ₹0 cash; a ₹1,23,144 **Auto Renewal** reminder in Upcoming credits |
 | Bond 500 units, face ₹1,000, 7.18% semi-annual | 2 coupons × (5,00,000 × 7.18% ÷ 2) | ₹35,900 when both coupon dates have passed; otherwise the paid coupons now and the rest in Upcoming credits |
-| RD ₹10,000 a month at 7% for 3 years | Each instalment × 7% × its days to maturity ÷ 365, summed — counted only in the maturity year | ≈ ₹14,400 that year |
-| NSC ₹1,00,000 at 7.7% for 5 years | 1,00,000 × 7.7% × 1,826 ÷ 365 — counted only in the maturity year | ≈ ₹38,500 that year |
+| RD ₹10,000 a month at 7% for 3 years | Each instalment × 7% × its days to maturity ÷ 365, summed — counted only in the maturity year | ≈ ₹14,400 that year, with principal ≈ ₹3,60,000 |
 
 The card shows the **Credited to date** total, the **Recorded** interest you have already
 confirmed for those same holdings, and how many deposits there are. Each row shows the
-basis, the credit date or accrual period and a short note; click a row to open the
-holding. The maturity card shows principal and interest side by side, so the maturity
-value is always principal + interest.
+basis, the payment date or period and a short note; click a row to open the holding. The
+maturity card shows principal and interest side by side, so the maturity value is always
+principal + interest, and its instruction decides whether that money is payout or a
+renewal reminder.
 
 ---
 
@@ -416,6 +426,13 @@ that's what feeds the Dashboard's *Monthly SIPs* card.
 > paid periodically, it compounds and is paid with the maturity amount. Switch to **Fixed**
 > to choose how often the bank credits interest.
 
+> **Maturity instructions** — pick **Payout** (the maturity value is credited to your bank
+> account) or **Renew** (you plan to roll it over). With Payout, cumulative deposits count
+> as a cash payment on the maturity date, and the payment calendar shows **principal +
+> interest**. With Renew nothing is paid out: the maturity value appears only as an
+> **Auto Renewal** reminder in Upcoming credits and the payment calendar, and is kept out
+> of the income totals. Older deposits without the field are treated as Payout.
+
 > DeepTrack calculates the **Maturity date** and **Maturity amount** for you — leave them
 > blank. If your bank statement only shows a maturity date, type that and leave the tenor blank.
 
@@ -423,15 +440,17 @@ that's what feeds the Dashboard's *Monthly SIPs* card.
 > 1095 days are all accepted — there is no 11-month or 31-day cap, and years + months + days
 > add together. The maturity date and amount recalculate as you type.
 
-**Recurring deposits (RD)** — Enter **Monthly deposit** and the **Tenor**. DeepTrack totals
-the deposits over the months and computes maturity.
+**Recurring deposits (RD)** — Enter **Monthly deposit**, the **Tenor**, and **Maturity
+instructions**. DeepTrack totals the deposits over the months and computes maturity.
 
 > **Customer ID / folio.** The same company often maps several deposits to one customer ID.
 > Fill **Customer ID / folio** on each FD or RD and they're clubbed on the Investments page
 > under *Customer folios* — open the tile to see every deposit's date, principal and value.
 > Deposits never merge: a new contribution is always a separate deposit with its own row.
 
-**Bonds & G-Secs** — Enter **Issuer**, **Bond type**, **ISIN**, **Coupon rate** and **Maturity date**.
+**Bonds & G-Secs** — Enter **Issuer**, **Bond type**, **ISIN**, **Coupon rate**,
+**Maturity date** and **Maturity instructions**. Bonds and small-savings schemes that pay
+out periodically also use their **Interest frequency** to place each payout on the calendar.
 
 **PPF** — Enter the **Account number** and **Interest rate**. The **Contributions** list holds
 every deposit: it starts with one row per year from the start date (when you fill **Yearly
@@ -1039,7 +1058,7 @@ may need adjusting — that's in `docs/DEPLOYMENT.md`.
 Double-click `start.bat` in the DeepTrack folder and wait for *DeepTrack running*, then
 press **Retry**. When the server stops, DeepTrack shows that status page instead of a
 remembered old screen, so an out-of-date view can no longer appear. The tiny line at the
-bottom of the sidebar (**Build 2026.11.23b**) tells you which copy is loaded; after an
+bottom of the sidebar (**Build 2026.11.24b**) tells you which copy is loaded; after an
 update it should change. If it doesn't, refresh the page once (Ctrl+F5).
 
 ---

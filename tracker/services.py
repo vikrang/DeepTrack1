@@ -495,7 +495,9 @@ def income_summary(year: int | None, viewer) -> dict:
 
 ESTIMATE_TYPES = {"fd", "rd", "bonds", "small_savings"}
 _COUPON_MONTHS = {"Annual": 12, "Semi-annual": 6, "Quarterly": 3}
-_PAYOUT_SAVINGS = {"Post Office MIS", "Senior Citizens' Savings Scheme (SCSS)"}
+_PAYOUT_STEP = {"Monthly": 1, "Quarterly": 3, "Half-yearly": 6, "Annual": 12}
+_PAYOUT_LABEL = {1: "monthly", 3: "quarterly", 6: "half-yearly", 12: "annual"}
+_PAYOUT_SAVINGS = {"Post Office MIS": 1, "Senior Citizens' Savings Scheme (SCSS)": 3}
 
 
 def _positive(value) -> float | None:
@@ -545,17 +547,45 @@ def _fmt_day(day: date) -> str:
     return f"{day.day} {day.strftime('%b %Y')}"
 
 
-def _accrual_plan(principal, rate, start, maturity):
-    """Payout interest that builds up day by day until the maturity date."""
-    if not principal or not rate or not start:
+def _maturity_action(details) -> str:
+    raw = str(details.get("maturity_instructions") or "Payout").strip().lower()
+    return "renew" if raw == "renew" else "payout"
+
+
+def _payout_plan(principal, rate, start, maturity, step):
+    """Interest the bank actually pays into the account, once every few months."""
+    if not principal or not rate or not start or not maturity or maturity <= start:
         return None
-    if maturity and maturity <= start:
-        return None
+    step = step if step in _PAYOUT_STEP.values() else 3
+    coupon = principal * rate / 100 * step / 12
+    dates, day = [], _add_months(start, step)
+    while day <= maturity and len(dates) < 2400:
+        dates.append(day)
+        day = _add_months(day, step)
+    final = None
+    if dates:
+        if dates[-1] < maturity:
+            # The bank pays the broken last period along with the maturity amount.
+            final = principal * rate / 100 * (maturity - dates[-1]).days / 365
+            dates.append(maturity)
+    else:
+        final = principal * rate / 100 * (maturity - start).days / 365
+        if final <= 0:
+            return None
+        dates.append(maturity)
+    label = _PAYOUT_LABEL[step]
     return {
-        "mode": "accrual", "daily": principal * rate / 100 / 365,
-        "from": start, "to": maturity, "principal": principal, "rate": rate,
-        "note": "Interest accrues daily and leaves the deposit at each payout",
+        "mode": "coupons", "coupon": coupon, "final": final,
+        "step": step, "dates": dates, "holding": principal, "rate": rate,
+        "frequency": label,
+        "note": f"Interest paid out {label} to the bank account",
     }
+
+
+def _coupon_amount(plan, day: date) -> float:
+    if plan.get("final") and plan["dates"] and day == plan["dates"][-1]:
+        return plan["final"]
+    return plan["coupon"]
 
 
 def _coupons_plan(holding, rate, start, maturity, step):
@@ -578,25 +608,41 @@ def _coupons_plan(holding, rate, start, maturity, step):
     }
 
 
-def _maturity_plan(principal, interest, maturity, rate, years, note):
+def _maturity_plan(principal, interest, maturity, rate, years, note, action):
     if not principal or not interest or interest <= 0 or not maturity:
         return None
     return {
         "mode": "maturity", "principal": principal, "interest": interest,
         "date": maturity, "rate": rate, "years": years, "note": note,
+        "action": action,
     }
 
 
-def _fd_plan(details, start, invested):
+def _principal_plan(principal, maturity, action):
+    """The deposit itself coming back at maturity, after the interest was paid out."""
+    if not principal or not maturity:
+        return None
+    note = ("Principal returns to the bank account at maturity"
+            if action == "payout" else "Scheduled to renew — shown as a reminder, not paid out")
+    return {"mode": "principal", "principal": principal, "date": maturity,
+            "action": action, "note": note}
+
+
+def _fd_plans(details, start, invested):
     principal = _positive(details.get("principal")) or _positive(invested)
     rate = _positive(details.get("interest_rate"))
     maturity = _parse_day(details.get("maturity_date"))
-    if not principal or not rate:
-        return None
+    action = _maturity_action(details)
+    if not principal or not rate or not maturity:
+        return []
     if (details.get("payout") or "Cumulative") != "Cumulative":
-        return _accrual_plan(principal, rate, start, maturity)
-    if not start or not maturity or maturity <= start:
-        return None
+        compounding = details.get("compounding") or "Quarterly"
+        step = 12 if compounding == "Simple" else _PAYOUT_STEP.get(compounding, 3)
+        plans = [_payout_plan(principal, rate, start, maturity, step)]
+        plans.append(_principal_plan(principal, maturity, action))
+        return [plan for plan in plans if plan]
+    if not start or maturity <= start:
+        return []
     stored = _positive(details.get("maturity_amount"))
     if stored and stored > principal:
         interest = stored - principal
@@ -608,10 +654,10 @@ def _fd_plan(details, start, invested):
         else:
             per_year = {"Monthly": 12, "Quarterly": 4, "Half-yearly": 2, "Annual": 1}.get(compounding, 4)
             interest = principal * (1 + rate / 100 / per_year) ** (per_year * years) - principal
-    return _maturity_plan(
-        principal, interest, maturity, rate, (maturity - start).days / 365,
-        "Interest is added to the principal and paid out with the maturity amount",
-    )
+    note = ("Interest is added to the principal and paid out with the maturity amount"
+            if action == "payout" else "Scheduled to renew at maturity — shown as a reminder, not paid out")
+    plan = _maturity_plan(principal, interest, maturity, rate, (maturity - start).days / 365, note, action)
+    return [plan] if plan else []
 
 
 def _rd_interest(monthly: float, rate: float, start: date, until: date) -> float:
@@ -629,59 +675,69 @@ def _rd_interest(monthly: float, rate: float, start: date, until: date) -> float
     return interest
 
 
-def _rd_plan(details, start, invested):
+def _rd_plans(details, start):
     monthly = _positive(details.get("monthly_amount"))
     rate = _positive(details.get("interest_rate"))
     maturity = _parse_day(details.get("maturity_date"))
+    action = _maturity_action(details)
     if not monthly or not rate or not start or not maturity or maturity <= start:
-        return None
+        return []
     interest = _rd_interest(monthly, rate, start, maturity)
     months = (maturity.year - start.year) * 12 + (maturity.month - start.month)
-    principal = _positive(invested) or monthly * max(1, months)
-    return _maturity_plan(
-        principal, interest, maturity, rate, (maturity - start).days / 365,
-        "Paid out with the maturity amount; assumes every instalment was made",
+    principal = monthly * max(1, months)
+    note = ("Paid out with the maturity amount; assumes every instalment was made"
+            if action == "payout" else "Scheduled to renew — shown as a reminder, not paid out")
+    plan = _maturity_plan(
+        principal, interest, maturity, rate, (maturity - start).days / 365, note, action,
     )
+    return [plan] if plan else []
 
 
-def _bonds_plan(details, start):
+def _bonds_plans(details, start):
     quantity = _positive(details.get("quantity"))
     face = _positive(details.get("face_value")) or _positive(details.get("purchase_price"))
     rate = _positive(details.get("coupon_rate"))
     if not quantity or not face or not rate:
-        return None
+        return []
     holding = quantity * face
     maturity = _parse_day(details.get("maturity_date"))
+    action = _maturity_action(details)
     frequency = details.get("interest_frequency")
     step = _COUPON_MONTHS.get(frequency) if frequency else None
     if step:
-        return _coupons_plan(holding, rate, start, maturity, step)
+        plans = [_coupons_plan(holding, rate, start, maturity, step)]
+        plans.append(_principal_plan(holding, maturity, action))
+        return [plan for plan in plans if plan]
     if not maturity or not start or maturity <= start:
-        return None
+        return []
     days = (maturity - start).days
     interest = holding * rate / 100 * days / 365
-    return _maturity_plan(
-        holding, interest, maturity, rate, days / 365,
-        "Cumulative — interest is paid with the redemption amount",
-    )
+    note = ("Cumulative — interest is paid with the redemption amount"
+            if action == "payout" else "Scheduled to renew — shown as a reminder, not paid out")
+    plan = _maturity_plan(holding, interest, maturity, rate, days / 365, note, action)
+    return [plan] if plan else []
 
 
-def _savings_plan(details, start):
+def _savings_plans(details, start):
     deposit = _positive(details.get("deposit_amount"))
     rate = _positive(details.get("interest_rate"))
     if not deposit or not rate:
-        return None
+        return []
     maturity = _parse_day(details.get("maturity_date"))
+    action = _maturity_action(details)
     if details.get("scheme") in _PAYOUT_SAVINGS:
-        return _accrual_plan(deposit, rate, start, maturity)
+        step = _PAYOUT_SAVINGS[details.get("scheme")]
+        plans = [_payout_plan(deposit, rate, start, maturity, step)]
+        plans.append(_principal_plan(deposit, maturity, action))
+        return [plan for plan in plans if plan]
     if not start or not maturity or maturity <= start:
-        return None
+        return []
     days = (maturity - start).days
     interest = deposit * rate / 100 * days / 365
-    return _maturity_plan(
-        deposit, interest, maturity, rate, days / 365,
-        "Cumulative — interest is paid with the maturity value",
-    )
+    note = ("Cumulative — interest is paid with the maturity value"
+            if action == "payout" else "Scheduled to renew — shown as a reminder, not paid out")
+    plan = _maturity_plan(deposit, interest, maturity, rate, days / 365, note, action)
+    return [plan] if plan else []
 
 
 def _debt_plans():
@@ -701,47 +757,40 @@ def _debt_plans():
             details = {}
         start = _parse_day(row["start_date"])
         if row["type"] == "fd":
-            plan = _fd_plan(details, start, row["invested_amount"])
+            row_plans = _fd_plans(details, start, row["invested_amount"])
         elif row["type"] == "rd":
-            plan = _rd_plan(details, start, row["invested_amount"])
+            row_plans = _rd_plans(details, start)
         elif row["type"] == "bonds":
-            plan = _bonds_plan(details, start)
+            row_plans = _bonds_plans(details, start)
         else:
-            plan = _savings_plan(details, start)
-        if not plan:
+            row_plans = _savings_plans(details, start)
+        if not row_plans:
             skipped += 1
             continue
-        plan.update({
-            "investment_id": row["id"],
-            "investment": row["name"],
-            "owner": row["owner_name"],
-            "type": row["type"],
-            "type_label": fields.TYPES.get(row["type"], {}).get("label", row["type"]),
-        })
-        plans.append(plan)
+        for plan in row_plans:
+            plan.update({
+                "investment_id": row["id"],
+                "investment": row["name"],
+                "owner": row["owner_name"],
+                "type": row["type"],
+                "type_label": fields.TYPES.get(row["type"], {}).get("label", row["type"]),
+            })
+            plans.append(plan)
     return plans, skipped
-
-
-def _plan_amount(plan, lo, hi):
-    if not lo or not hi or hi < lo:
-        return 0.0
-    if plan["mode"] == "accrual":
-        end = min(hi, plan["to"]) if plan["to"] else hi
-        return plan["daily"] * _days_in(lo, end)
-    if plan["mode"] == "coupons":
-        return plan["coupon"] * sum(1 for day in plan["dates"] if lo <= day <= hi)
-    return plan["interest"] if lo <= plan["date"] <= hi else 0.0
 
 
 def _plan_basis(plan):
     if plan["mode"] == "coupons":
+        label = plan.get("frequency")
+        if label:
+            return f"{plan['rate']:g}% on ₹{_inr(plan['holding'])}, paid {label}"
         return f"{plan['rate']:g}% on ₹{_inr(plan['holding'])}, {12 // plan['step']}x a year"
-    if plan["mode"] == "accrual":
-        return f"{plan['rate']:g}% on ₹{_inr(plan['principal'])}"
     return f"{plan['rate']:g}% on ₹{_inr(plan['principal'])} for {plan['years']:.1f} years"
 
 
-def _coupon_basis(plan, count):
+def _coupon_basis(plan, count, total):
+    if plan.get("final") and abs(total - plan["coupon"] * count) > 0.5:
+        return f"{count} payout{'s' if count != 1 else ''} totalling ₹{_inr(total)} ({_plan_basis(plan)})"
     return (f"{count} coupon{'s' if count != 1 else ''} of ₹{_inr(plan['coupon'])}"
             f" ({_plan_basis(plan)})")
 
@@ -758,7 +807,7 @@ def _plan_row(plan):
 
 
 def income_estimate(year: int, recorded: dict | None = None, plans=None, skipped=None) -> dict:
-    """Interest credited up to today, with future credits split financial year by financial year."""
+    """Interest actually paid out, with future payments split financial year by financial year."""
     fy_from, fy_to = _fy_bounds(year)
     today = date.today()
     if plans is None:
@@ -769,31 +818,32 @@ def income_estimate(year: int, recorded: dict | None = None, plans=None, skipped
 
     items = []
     for plan in plans:
-        amount = _plan_amount(plan, fy_from, cutoff)
-        if amount <= 0:
-            continue
-        item = _plan_row(plan)
-        item.update({
-            "amount": round(amount, 2),
-            "note": plan["note"],
-            "credited_on": plan["date"].isoformat() if plan["mode"] == "maturity" else None,
-            "period": None,
-        })
-        if plan["mode"] == "accrual":
-            start_day = max(fy_from, plan["from"])
-            end_day = min(cutoff, plan["to"]) if plan["to"] else cutoff
-            item["basis"] = f"{_plan_basis(plan)} for {_days_in(start_day, end_day)} days"
-            item["period"] = f"{_fmt_day(start_day)} – {_fmt_day(end_day)}"
-            item["partial"] = bool(plan["to"] is None or plan["to"] > cutoff) and cutoff < fy_to
-        elif plan["mode"] == "coupons":
+        if plan["mode"] == "coupons":
             dates = [day for day in plan["dates"] if fy_from <= day <= cutoff]
-            item["basis"] = _coupon_basis(plan, len(dates))
-            item["period"] = f"{_fmt_day(dates[0])} – {_fmt_day(dates[-1])}"
-            item["credited_on"] = dates[-1].isoformat()
-            item["partial"] = False
+            if not dates:
+                continue
+            item = _plan_row(plan)
+            amount = round(sum(_coupon_amount(plan, day) for day in dates), 2)
+            item.update({
+                "amount": amount,
+                "basis": _coupon_basis(plan, len(dates), amount),
+                "note": plan["note"],
+                "credited_on": dates[-1].isoformat(),
+                "period": f"{_fmt_day(dates[0])} – {_fmt_day(dates[-1])}" if len(dates) > 1 else None,
+            })
+        elif plan["mode"] == "maturity" and plan.get("action", "payout") == "payout":
+            if not (fy_from <= plan["date"] <= cutoff):
+                continue
+            item = _plan_row(plan)
+            item.update({
+                "amount": round(plan["interest"], 2),
+                "basis": _plan_basis(plan),
+                "note": f"Matures {_fmt_day(plan['date'])} · maturity value ₹{_inr(plan['principal'] + plan['interest'])} paid out",
+                "credited_on": plan["date"].isoformat(),
+                "period": None,
+            })
         else:
-            item["basis"] = _plan_basis(plan)
-            item["partial"] = False
+            continue
         if recorded:
             item["recorded"] = round(recorded.get(plan["investment_id"], 0.0), 2)
         items.append(item)
@@ -808,54 +858,70 @@ def income_estimate(year: int, recorded: dict | None = None, plans=None, skipped
             continue
         rows = []
         for plan in plans:
-            if plan["mode"] == "accrual":
-                start_day = max(lo, plan["from"])
-                end_day = min(hi_year, plan["to"]) if plan["to"] else hi_year
-                if end_day < start_day:
-                    continue
-                amount = plan["daily"] * _days_in(start_day, end_day)
-                if amount <= 0:
-                    continue
-                row = _plan_row(plan)
-                row.update({
-                    "amount": round(amount, 2),
-                    "basis": f"{_plan_basis(plan)} for {_days_in(start_day, end_day)} days",
-                    "note": plan["note"], "date": None,
-                    "period": f"{_fmt_day(start_day)} – {_fmt_day(end_day)}",
-                })
-            elif plan["mode"] == "coupons":
+            action = plan.get("action", "payout")
+            if plan["mode"] == "coupons":
                 dates = [day for day in plan["dates"] if lo <= day <= hi_year]
                 if not dates:
                     continue
                 row = _plan_row(plan)
+                amount = round(sum(_coupon_amount(plan, day) for day in dates), 2)
                 row.update({
-                    "amount": round(plan["coupon"] * len(dates), 2),
-                    "basis": _coupon_basis(plan, len(dates)),
+                    "amount": amount,
+                    "basis": _coupon_basis(plan, len(dates), amount),
                     "note": plan["note"], "date": dates[-1].isoformat(),
-                    "period": f"{_fmt_day(dates[0])} – {_fmt_day(dates[-1])}",
+                    "period": f"{_fmt_day(dates[0])} – {_fmt_day(dates[-1])}" if len(dates) > 1 else None,
+                    "reminder": False,
                 })
-            else:
+            elif plan["mode"] == "maturity":
                 if not (lo <= plan["date"] <= hi_year):
                     continue
                 row = _plan_row(plan)
+                if action == "payout":
+                    row.update({
+                        "amount": round(plan["interest"], 2),
+                        "basis": _plan_basis(plan),
+                        "note": f"Matures {_fmt_day(plan['date'])} · maturity value ₹{_inr(plan['principal'] + plan['interest'])} paid out",
+                        "date": plan["date"].isoformat(), "period": None,
+                        "reminder": False,
+                    })
+                else:
+                    row.update({
+                        "amount": round(plan["principal"] + plan["interest"], 2),
+                        "basis": "Auto renewal",
+                        "note": f"Matures {_fmt_day(plan['date'])} · renews automatically, nothing is paid out",
+                        "date": plan["date"].isoformat(), "period": None,
+                        "reminder": True,
+                    })
+            elif plan["mode"] == "principal":
+                if not (lo <= plan["date"] <= hi_year):
+                    continue
+                if action == "payout":
+                    continue  # principal return is not income; the calendar shows it
+                row = _plan_row(plan)
                 row.update({
-                    "amount": round(plan["interest"], 2),
-                    "basis": _plan_basis(plan),
-                    "note": f"Matures {_fmt_day(plan['date'])} · maturity value ₹{_inr(plan['principal'] + plan['interest'])}",
+                    "amount": round(plan["principal"], 2),
+                    "basis": "Auto renewal",
+                    "note": f"Matures {_fmt_day(plan['date'])} · renews automatically, nothing is paid out",
                     "date": plan["date"].isoformat(), "period": None,
+                    "reminder": True,
                 })
+            else:
+                continue
             rows.append(row)
         if not rows:
             continue
         rows.sort(key=lambda row: (row["date"] or "9999", row["investment"]))
+        cash_rows = [row for row in rows if not row.get("reminder")]
         upcoming.append({
             "year": future_year,
             "label": fiscal_year_label(future_year),
             "from": lo_year.isoformat(),
             "to": hi_year.isoformat(),
             "items": rows,
-            "count": len(rows),
-            "total": round(sum(row["amount"] for row in rows), 2),
+            "count": len(cash_rows),
+            "total": round(sum(row["amount"] for row in cash_rows), 2),
+            "reminder_count": len(rows) - len(cash_rows),
+            "reminder_total": round(sum(row["amount"] for row in rows if row.get("reminder")), 2),
         })
         if len(upcoming) >= 6:
             break
@@ -870,11 +936,14 @@ def income_estimate(year: int, recorded: dict | None = None, plans=None, skipped
             "interest": round(plan["interest"], 2),
             "maturity_amount": round(plan["principal"] + plan["interest"], 2),
             "maturity_date": plan["date"].isoformat(),
+            "action": plan.get("action", "payout"),
             "matured": plan["date"] <= today,
         })
         cumulative.append(entry)
     cumulative.sort(key=lambda entry: entry["maturity_date"])
 
+    payout_total = sum(entry["maturity_amount"] for entry in cumulative if entry["action"] == "payout")
+    renewal_total = sum(entry["maturity_amount"] for entry in cumulative if entry["action"] == "renew")
     return {
         "year": year,
         "label": fiscal_year_label(year),
@@ -886,14 +955,21 @@ def income_estimate(year: int, recorded: dict | None = None, plans=None, skipped
         "total": round(sum(item["amount"] for item in items), 2),
         "upcoming": upcoming,
         "upcoming_total": round(sum(group["total"] for group in upcoming), 2),
+        "renewal_total": round(sum(group["reminder_total"] for group in upcoming), 2),
         "cumulative": cumulative,
-        "cumulative_total": round(sum(entry["maturity_amount"] for entry in cumulative), 2),
+        "cumulative_total": round(payout_total, 2),
+        "cumulative_renewal_total": round(renewal_total, 2),
         "skipped": skipped,
     }
 
 
 def _income_calendar(year: int, items: list, plans: list) -> dict:
-    """Daily credited and projected income for one financial year."""
+    """Cash actually reaching the bank account in one financial year.
+
+    Only real payments are shaded: recorded income, coupons, periodic interest
+    payouts, and maturities (principal + interest when the instruction is payout).
+    Auto-renewals are listed as reminders and never counted as money received.
+    """
     fy_from, fy_to = _fy_bounds(year)
     today = date.today()
     days = {}
@@ -904,7 +980,7 @@ def _income_calendar(year: int, items: list, plans: list) -> dict:
         slot = days.setdefault(day.isoformat(), {"credited": 0.0, "expected": 0.0})
         slot[state] += amount
 
-    events, lumps = [], []
+    events, lumps, renewals = [], [], []
     for item in items:
         raw = item.get("credited_date") or item.get("due_date") or str(item.get("created_at") or "")[:10]
         day = _parse_day(raw)
@@ -922,37 +998,54 @@ def _income_calendar(year: int, items: list, plans: list) -> dict:
             "state": state,
         })
     for plan in plans:
-        if plan["mode"] == "accrual":
-            start = max(fy_from, plan["from"])
-            end = min(fy_to, plan["to"]) if plan["to"] else fy_to
-            cursor = start
-            while cursor <= end:
-                add(cursor, plan["daily"], "credited" if cursor <= today else "expected")
-                cursor += timedelta(days=1)
-        elif plan["mode"] == "coupons":
+        action = plan.get("action", "payout")
+        if plan["mode"] == "coupons":
             for day in plan["dates"]:
                 if not (fy_from <= day <= fy_to):
                     continue
                 state = "credited" if day <= today else "expected"
-                add(day, plan["coupon"], state)
+                amount = round(_coupon_amount(plan, day), 2)
+                add(day, amount, state)
+                label = "Interest payout" if plan.get("frequency") else "Coupon"
                 lumps.append({
                     "date": day.isoformat(), "investment_id": plan["investment_id"],
-                    "investment": plan["investment"], "label": "Coupon",
-                    "amount": round(plan["coupon"], 2), "state": state,
+                    "investment": plan["investment"], "label": label,
+                    "amount": amount, "state": state,
                 })
-        elif fy_from <= plan["date"] <= fy_to:
+        elif plan["mode"] == "maturity":
+            if not (fy_from <= plan["date"] <= fy_to):
+                continue
             state = "credited" if plan["date"] <= today else "expected"
-            add(plan["date"], plan["interest"], state)
-            lumps.append({
+            total = plan["principal"] + plan["interest"]
+            if action == "payout":
+                add(plan["date"], total, state)
+                lumps.append({
+                    "date": plan["date"].isoformat(), "investment_id": plan["investment_id"],
+                    "investment": plan["investment"], "label": "Maturity payout",
+                    "amount": round(total, 2), "principal": round(plan["principal"], 2),
+                    "interest": round(plan["interest"], 2), "state": state,
+                })
+            else:
+                renewals.append({
+                    "date": plan["date"].isoformat(), "investment_id": plan["investment_id"],
+                    "investment": plan["investment"], "label": "Auto renewal",
+                    "amount": round(total, 2), "state": state,
+                })
+        elif plan["mode"] == "principal" and action == "renew":
+            if not (fy_from <= plan["date"] <= fy_to):
+                continue
+            state = "credited" if plan["date"] <= today else "expected"
+            renewals.append({
                 "date": plan["date"].isoformat(), "investment_id": plan["investment_id"],
-                "investment": plan["investment"], "label": "Matures",
-                "amount": round(plan["interest"], 2), "state": state,
+                "investment": plan["investment"], "label": "Auto renewal",
+                "amount": round(plan["principal"], 2), "state": state,
             })
     for slot in days.values():
         slot["credited"] = round(slot["credited"], 2)
         slot["expected"] = round(slot["expected"], 2)
     events.sort(key=lambda row: (row["date"], row["investment"]))
     lumps.sort(key=lambda row: (row["date"], row["investment"]))
+    renewals.sort(key=lambda row: (row["date"], row["investment"]))
     return {
         "year": year,
         "label": fiscal_year_label(year),
@@ -962,6 +1055,7 @@ def _income_calendar(year: int, items: list, plans: list) -> dict:
         "days": days,
         "events": events,
         "lumps": lumps,
+        "renewals": renewals,
     }
 
 

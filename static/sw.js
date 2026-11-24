@@ -5,8 +5,8 @@
  * replaying a cached copy of the UI, which used to look like an old version.
  */
 
-const VERSION = "deeptrack-v33";
-const BUILD_LABEL = "2026.11.24a";
+const VERSION = "deeptrack-v34";
+const BUILD_LABEL = "2026.11.24b";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());

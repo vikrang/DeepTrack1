@@ -1442,7 +1442,7 @@ function renderIncome() {
     <div class="page-head">
       <div>
         <h2>Income · ${esc(state.income.year_label)}</h2>
-        <p>Dividends, interest and rent — credited so far, upcoming financial year by financial year, and the daily calendar.</p>
+        <p>Dividends, interest and rent actually paid into an account — upcoming payments by financial year and the payment calendar.</p>
       </div>
     </div>
     <div class="dash-grid">
@@ -1470,7 +1470,7 @@ function creditedInterestCard() {
       <div class="card-head">
         <div>
           <div class="card-title">Interest credited · ${esc(est.label)}</div>
-          <div class="card-sub">Credits up to ${esc(fmtDate(est.cutoff))} — later ones are listed by financial year</div>
+          <div class="card-sub">Cash payouts due up to ${esc(fmtDate(est.cutoff))} — later payments are listed by financial year</div>
         </div>
         <span class="pill pill-muted">${items.length} deposit${items.length === 1 ? "" : "s"}</span>
       </div>
@@ -1488,7 +1488,7 @@ function creditedInterestCard() {
             <div class="estimate-main">
               <div class="estimate-name">${esc(item.investment)}</div>
               <div class="estimate-basis">${esc(item.basis)}${meta ? ` · ${meta}` : ""}</div>
-              <div class="estimate-note">${esc(item.note)}${item.partial ? " · accrual so far this year" : ""}</div>
+              <div class="estimate-note">${esc(item.note)}</div>
             </div>
             <div class="estimate-amt">${inr2(item.amount)}</div>
           </div>`;
@@ -1496,20 +1496,20 @@ function creditedInterestCard() {
       </div>` : `<div class="empty compact">
         <div class="empty-icon">${icon("trendUp")}</div>
         <h3>Nothing credited in ${esc(est.label)} yet</h3>
-        <p>Payout interest is counted day by day up to today. Cumulative deposits count once, on their maturity date.</p>
+        <p>Only real payments are counted: coupons and interest payouts as they fall due, and maturity values when the instruction is payout.</p>
       </div>`}
-      <p class="card-foot">Payout interest accrues daily and is shown to the run date. Cumulative deposits and bonds roll interest into the principal and are counted once, on maturity.${est.skipped ? ` ${est.skipped} debt holding${est.skipped === 1 ? "" : "s"} skipped for missing rate or amount.` : ""}</p>
+      <p class="card-foot">Counts cash interest actually paid out. Cumulative deposits count once, on their maturity date, when the maturity instruction is Payout — renewals are kept as reminders and never counted as income.${est.skipped ? ` ${est.skipped} debt holding${est.skipped === 1 ? "" : "s"} skipped for missing rate or amount.` : ""}</p>
     </section>`;
 }
 
 function upcomingInterestCard() {
   const est = state.income?.estimate;
   if (!est) {
-    return `<section class="card card-pad span-5"><div class="skeleton" style="height:220px"></div></section>`;
+    return `<section class="card card-pad span-12"><div class="skeleton" style="height:220px"></div></section>`;
   }
   const groups = est.upcoming || [];
   return `
-    <section class="card card-pad span-5 upcoming-card">
+    <section class="card card-pad span-12 upcoming-card">
       <div class="card-head">
         <div>
           <div class="card-title">Upcoming credits</div>
@@ -1521,12 +1521,12 @@ function upcomingInterestCard() {
         const shown = group.items.slice(0, 10);
         const rest = group.items.length - shown.length;
         return `<div class="fy-block">
-          <div class="fy-head"><strong>${esc(group.label)}</strong><span>${group.count} credit${group.count === 1 ? "" : "s"} · <b>${compactMoney(group.total)}</b></span></div>
+          <div class="fy-head"><strong>${esc(group.label)}</strong><span>${group.count} credit${group.count === 1 ? "" : "s"} · <b>${compactMoney(group.total)}</b>${group.reminder_count ? ` · ${group.reminder_count} renewal${group.reminder_count === 1 ? "" : "s"}` : ""}</span></div>
           ${shown.map((item) => {
             const when = item.date ? fmtDate(item.date) : item.period || "";
-            return `<div class="estimate-row drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
+            return `<div class="estimate-row drillable${item.reminder ? " is-reminder" : ""}" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
               <div class="estimate-main">
-                <div class="estimate-name">${esc(item.investment)}</div>
+                <div class="estimate-name">${esc(item.investment)}${item.reminder ? ` <span class="pill pill-warn">Auto Renewal</span>` : ""}</div>
                 <div class="estimate-basis">${esc(when)} · ${esc(item.basis)}</div>
                 <div class="estimate-note">${esc(item.note)}</div>
               </div>
@@ -1540,22 +1540,22 @@ function upcomingInterestCard() {
         <h3>No credits scheduled</h3>
         <p>Fill the rate and dates on fixed deposits, RDs and bonds to project the rest of the year and later years.</p>
       </div>`}
-      <p class="card-foot">Calculated from the saved rates and dates; the bank's actual credits can differ. Cumulative deposits appear here on their maturity date, and in detail in the maturity card.</p>
+      <p class="card-foot">Only cash payments count towards the total. A maturity marked Renew is shown as an Auto Renewal reminder (dashed) and is not paid out.${est.renewal_total ? ` ${compactMoney(est.renewal_total)} will roll over instead.` : ""}</p>
     </section>`;
 }
 
 function cumulativeCard() {
   const est = state.income?.estimate;
   if (!est) {
-    return `<section class="card card-pad span-7"><div class="skeleton" style="height:220px"></div></section>`;
+    return `<section class="card card-pad span-12"><div class="skeleton" style="height:220px"></div></section>`;
   }
   const list = est.cumulative || [];
   return `
-    <section class="card card-pad span-7 cumulative-card">
+    <section class="card card-pad span-12 cumulative-card">
       <div class="card-head">
         <div>
           <div class="card-title">Cumulative deposits · maturity value</div>
-          <div class="card-sub">Principal plus interest, paid once at maturity</div>
+          <div class="card-sub">Principal plus interest, settled as per the maturity instruction</div>
         </div>
         <span class="pill pill-muted">${compactMoney(est.cumulative_total || 0)}</span>
       </div>
@@ -1575,6 +1575,9 @@ function cumulativeCard() {
                 <td>
                   <div class="cell-name">${fmtDate(entry.maturity_date)}</div>
                   <div class="cell-sub">${entry.matured ? "Matured" : fyLabel(fyEndFromIso(entry.maturity_date))}</div>
+                  ${entry.action === "renew"
+                    ? `<span class="pill pill-warn">Auto renewal</span>`
+                    : `<span class="pill pill-ok">Payout</span>`}
                 </td>
               </tr>`).join("")}
           </tbody>
@@ -1584,7 +1587,7 @@ function cumulativeCard() {
         <h3>No cumulative deposits yet</h3>
         <p>Cumulative fixed deposits, RDs, NSC and similar balances appear here with the maturity value once principal, rate, start and maturity dates are filled.</p>
       </div>`}
-      <p class="card-foot">Maturity value = principal + interest. Where the bank's maturity amount is saved it is used as-is.</p>
+      <p class="card-foot">Maturity value = principal + interest${est.cumulative_total ? `; ${compactMoney(est.cumulative_total)} is due as payout` : ""}${est.cumulative_renewal_total ? `, and ${compactMoney(est.cumulative_renewal_total)} is marked Auto renewal (a reminder only, nothing is paid out)` : ""}. Where the bank's maturity amount is saved it is used as-is.</p>
     </section>`;
 }
 
@@ -1653,40 +1656,45 @@ function calDayPanel(cal, iso) {
   const expected = Number(slot.expected) || 0;
   const events = (cal.events || []).filter((event) => event.date === iso);
   const lumps = (cal.lumps || []).filter((row) => row.date === iso);
+  const renewals = (cal.renewals || []).filter((row) => row.date === iso);
   const rows = [
     ...events.map((event) => ({
       label: event.kind_label, name: event.investment, amount: event.amount,
-      state: event.state, investment_id: event.investment_id,
+      state: event.state, investment_id: event.investment_id, sub: null,
     })),
     ...lumps.map((row) => ({
       label: row.label, name: row.investment, amount: row.amount,
       state: row.state, investment_id: row.investment_id,
+      sub: row.interest != null
+        ? `principal ${inr2(row.principal)} + interest ${inr2(row.interest)}`
+        : null,
+    })),
+    ...renewals.map((row) => ({
+      label: row.label, name: row.investment, amount: row.amount,
+      state: "renewal", investment_id: row.investment_id, sub: null,
     })),
   ];
-  const shown = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-  const residual = Math.max(0, Math.round((credited + expected - shown) * 100) / 100);
-  if (residual > 0.5) {
-    rows.push({
-      label: iso > cal.today ? "Projected accrual" : "Daily accrual",
-      name: "Payout interest across deposits", amount: residual,
-      state: iso > cal.today ? "expected" : "credited", investment_id: null,
-    });
-  }
+  const cash = credited + expected;
+  const renewalTotal = renewals.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
   return `<div class="cal-day-panel">
     <div class="cal-day-head">
       <strong>${fmtDate(iso)}</strong>
-      <span>${compactMoney(credited + expected)}</span>
+      <span>${cash ? compactMoney(cash) : "No payout"}</span>
       <button class="icon-btn" type="button" data-action="cal-day-close" aria-label="Close day detail">${icon("close", "sm")}</button>
     </div>
     ${rows.length ? `<div class="cal-day-rows">
       ${rows.map((row) => `
-        <div class="cal-day-row${row.investment_id ? " drillable" : ""}"${row.investment_id ? ` data-investment-id="${row.investment_id}" role="button" tabindex="0"` : ""}>
+        <div class="cal-day-row${row.investment_id ? " drillable" : ""}${row.state === "renewal" ? " is-reminder" : ""}"${row.investment_id ? ` data-investment-id="${row.investment_id}" role="button" tabindex="0"` : ""}>
           <span class="kind-tag">${esc(row.label)}</span>
-          <span class="cal-day-name">${esc(row.name)}</span>
-          <span class="pill ${row.state === "expected" ? "pill-muted" : "pill-ok"}">${row.state === "expected" ? "projected" : "credited"}</span>
+          <span class="cal-day-main">
+            <span class="cal-day-name">${esc(row.name)}</span>
+            ${row.sub ? `<span class="cal-day-sub">${esc(row.sub)}</span>` : ""}
+          </span>
+          <span class="pill ${row.state === "renewal" ? "pill-warn" : row.state === "expected" ? "pill-muted" : "pill-ok"}">${row.state === "renewal" ? "not paid" : row.state === "expected" ? "projected" : "credited"}</span>
           <strong>${inr2(row.amount)}</strong>
         </div>`).join("")}
-    </div>` : `<p class="muted cal-day-empty">No income recorded or expected on this date.</p>`}
+    </div>` : `<p class="muted cal-day-empty">No payment recorded or expected on this date.</p>`}
+    ${renewalTotal ? `<p class="cal-day-foot muted">Matures and renews automatically — ${compactMoney(renewalTotal)} is not paid out.</p>` : ""}
   </div>`;
 }
 
@@ -1731,15 +1739,15 @@ function incomeCalendarCard() {
     body = `${nav}
       <div class="cal-month-view">
         ${calGridHtml(year, monthNo - 1, days, max, false)}
-        ${detail || `<p class="cal-hint muted">Tap a day to see what was credited — or is projected — that day.</p>`}
+        ${detail || `<p class="cal-hint muted">Tap a day to see what was paid — or is projected — that day. Renewals show as reminders.</p>`}
       </div>`;
   }
   return `
     <section class="card card-pad span-12 income-calendar-card" id="income-calendar">
       <div class="card-head">
         <div>
-          <div class="card-title">Income calendar · ${esc(cal.label)}</div>
-          <div class="card-sub">Daily income across the financial year; zoom from the year to a month, then tap a day</div>
+          <div class="card-title">Payment calendar · ${esc(cal.label)}</div>
+          <div class="card-sub">Cash actually credited to an account — interest, coupons, dividends and payouts; zoom from the year to a month, then tap a day</div>
         </div>
         <div class="card-head-tools cal-tools">
           <div class="segmented" role="group" aria-label="Calendar zoom">
@@ -1756,6 +1764,7 @@ function incomeCalendarCard() {
         <i class="cal-swatch" style="--cal-level:100"></i>
         <span>High</span>
         <span class="cal-legend-note"><i class="cal-swatch is-projected"></i> projected</span>
+        <span class="cal-legend-note"><i class="cal-swatch is-reminder"></i> renewal reminder — not paid out</span>
       </div>
       ${body}
     </section>`;
@@ -3070,6 +3079,7 @@ function openInvestmentDrawer(id) {
         ${item.maturity_date ? `<div class="dh-maturity">
           <span>Matures ${fmtDate(item.maturity_date)}</span>
           ${item.maturity_value != null ? `<span class="dot">·</span><span>Maturity value <strong>${inr(item.maturity_value)}</strong></span>` : ""}
+          <span class="dot">·</span><span>${esc(item.details?.maturity_instructions || "Payout")}</span>
         </div>` : ""}
         <div class="dh-row">
           <div class="dh-item"><div class="k">Invested</div><div class="v">${inr2(item.invested_amount)}</div></div>
