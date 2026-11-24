@@ -620,6 +620,8 @@ img { display: block; }
 .bmark.has-logo img[data-auto-logo] { display: block; }
 .bmark.has-logo.bsym { padding: 0; }
 .bmark.has-logo.bsym img[data-auto-logo] { border-radius: inherit; }
+.bmark.no-logo { cursor: pointer; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
+.bmark.no-logo:hover { filter: brightness(1.12); }
 .sub-broker { display: inline-flex; align-items: center; gap: 4px; vertical-align: -3px; font-weight: 600; }
 .inv-card-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .inv-card-title strong { min-width: 0; }

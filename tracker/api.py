@@ -9,7 +9,8 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from io import BytesIO
-from urllib.parse import urlsplit
+from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 import requests
 from flask import Blueprint, current_app, g, jsonify, request, send_file, session
@@ -341,6 +342,9 @@ def _issuer_logos() -> dict:
 def _logo_warm_names() -> list[str]:
     names = list(fields.BANKS) + list(fields.DEPOSIT_ISSUERS) + list(fields.AMCS)
     names += list(fields.INSURERS) + list(fields.BROKERS)
+    # Badges are keyed on the investee company, so warm holding names too.
+    for row in db.query("SELECT name FROM investments WHERE name IS NOT NULL AND name <> ''"):
+        names.append(row["name"])
     for row in db.query("SELECT details FROM investments WHERE details IS NOT NULL"):
         try:
             details = json.loads(row["details"] or "{}")
@@ -390,6 +394,69 @@ def auto_logo():
     response = send_file(path, conditional=True)
     response.headers["Cache-Control"] = "private, max-age=604800"
     return response
+
+
+_LOGO_PICK_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".ico", ".pdf"}
+_LOGO_PICK_BYTES = 2 * 1024 * 1024
+
+
+def _pdf_logo_image(blob: bytes) -> bytes | None:
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(BytesIO(blob))
+    except Exception:
+        return None
+    for page in list(reader.pages)[:3]:
+        try:
+            images = list(page.images)
+        except Exception:
+            continue
+        for image in images:
+            try:
+                data = image.data
+            except Exception:
+                data = b""
+            if data and logos.sniff(data):
+                return data
+            try:
+                picture = image.image
+                if picture is not None:
+                    buffer = BytesIO()
+                    picture.save(buffer, "PNG")
+                    return buffer.getvalue()
+            except Exception:
+                continue
+    return None
+
+
+@bp.post("/logo")
+@login_required
+def save_logo():
+    """Keep a logo the user picked by hand, keyed on the company name."""
+    user = current_user()
+    name = (request.form.get("name") or "").strip()[:120]
+    upload = request.files.get("file")
+    if not name or not upload or not upload.filename:
+        return jsonify(error="Choose an image file to use as the logo."), 400
+    suffix = Path(upload.filename).suffix.lower()
+    if suffix not in _LOGO_PICK_TYPES:
+        return jsonify(error="Use a JPG, PNG, WEBP, GIF, SVG or PDF file."), 400
+    blob = upload.read(_LOGO_PICK_BYTES + 1)
+    if not blob:
+        return jsonify(error="That file is empty."), 400
+    if len(blob) > _LOGO_PICK_BYTES:
+        return jsonify(error="Keep the logo file under 2 MB."), 400
+    if suffix == ".pdf":
+        image = _pdf_logo_image(blob)
+        if not image:
+            return jsonify(error="That PDF has no picture inside it — try a JPG or PNG."), 400
+        blob = image
+    entry = logos.save(name, blob)
+    if not entry:
+        return jsonify(error="That file is not an image the browser can show."), 400
+    db.log_activity(user["id"], "updated", f"Added a logo for {name}", "logo", None)
+    return jsonify(ok=True, name=name, url=f"/api/logo?name={quote(name, safe='')}")
 
 
 @bp.get("/meta")

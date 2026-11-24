@@ -102,7 +102,53 @@ function markBadge(label, mark, options = {}) {
   if (!src) {
     return `<span class="bmark ${cls}" style="${style}" title="${esc(label)}" aria-label="${esc(label)}">${esc(mark)}</span>`;
   }
-  return `<span class="bmark ${cls} ${extra}" style="${style}" title="${esc(label)}" aria-label="${esc(label)}"><span class="bmark-initials">${esc(mark)}</span><img src="${esc(src)}" alt="" decoding="async" data-auto-logo></span>`;
+  return `<span class="bmark ${cls} ${extra}" style="${style}" title="${esc(label)}" aria-label="${esc(label)}" data-logo-name="${esc(label)}"><span class="bmark-initials">${esc(mark)}</span><img src="${esc(src)}" alt="" decoding="async" data-auto-logo></span>`;
+}
+function pickLogoFile(name) {
+  if (!name) return;
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".jpg,.jpeg,.png,.webp,.gif,.svg,.ico,.pdf,image/*,application/pdf";
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append("name", name);
+    form.append("file", file);
+    try {
+      const response = await fetch("/api/logo", { method: "POST", body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not save the logo.");
+      applyLogo(name, `${data.url || autoLogoUrl(name)}&v=${Date.now()}`);
+      toast(`Logo saved for ${name}`, "ok");
+    } catch (error) {
+      toast(error.message || "Could not save the logo.", "error");
+    }
+  });
+  input.click();
+}
+function applyLogo(name, url) {
+  document.querySelectorAll(".bmark[data-logo-name]").forEach((badge) => {
+    if (badge.dataset.logoName !== name) return;
+    let img = badge.querySelector("img[data-auto-logo]");
+    if (!img) {
+      if (!badge.querySelector(".bmark-initials")) {
+        const span = document.createElement("span");
+        span.className = "bmark-initials";
+        span.textContent = badge.textContent;
+        badge.textContent = "";
+        badge.appendChild(span);
+      }
+      img = document.createElement("img");
+      img.setAttribute("data-auto-logo", "");
+      img.alt = "";
+      img.decoding = "async";
+      badge.appendChild(img);
+    }
+    badge.classList.remove("no-logo");
+    badge.title = name;
+    img.src = url;
+  });
 }
 const BROKER_BRANDS = {
   "Zerodha": { bg: "#387ed1", mark: "Z" },
@@ -341,11 +387,6 @@ function symbolLogo(item) {
   const symbol = stockSymbol(item);
   return symbol ? state.meta?.logos?.[brandSlug(symbol)] || "" : "";
 }
-function symbolLogoRemote(item) {
-  const symbol = stockSymbol(item);
-  if (!symbol || symbol.length > 20) return "";
-  return `https://assets-netstorage.groww.in/stock-assets/logos2/${encodeURIComponent(symbol.toUpperCase())}.webp`;
-}
 function logoMark(label, logo, cls) {
   return markBadge(label, issuerMark(label), { cls, auto: logo });
 }
@@ -353,15 +394,6 @@ function issuerBadge(item, cls = "") {
   const name = item?.issuer || issuerName(item);
   const symbol = symbolLogo(item);
   if (symbol) return logoMark(name || item?.symbol || "", symbol, `${cls} bsym`);
-  const nameLogo = name ? logoFor(name) : "";
-  if (nameLogo && stockSymbol(item)) return logoMark(name, nameLogo, `${cls} bsym`);
-  if (stockSymbol(item)) {
-    return markBadge(name || item?.symbol || "", issuerMark(name || item?.symbol || ""), {
-      cls: `${cls} bsym`, auto: symbolLogoRemote(item),
-    });
-  }
-  const logo = nameLogo;
-  if (logo) return logoMark(name, logo, cls);
   return name ? issuerBadgeFromName(name, cls) : typeBadge(item, cls);
 }
 function holdingBadge(item) {
@@ -5407,6 +5439,15 @@ function bindGlobalEvents() {
 
   document.addEventListener("click", handleClick);
 
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const badge = target?.closest(".bmark.no-logo[data-logo-name]");
+    if (!badge) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pickLogoFile(badge.dataset.logoName);
+  }, true);
+
   document.addEventListener("load", (event) => {
     const img = event.target;
     if (img instanceof HTMLImageElement && img.hasAttribute("data-auto-logo")) {
@@ -5415,9 +5456,14 @@ function bindGlobalEvents() {
   }, true);
   document.addEventListener("error", (event) => {
     const img = event.target;
-    if (img instanceof HTMLImageElement && img.hasAttribute("data-auto-logo")) {
-      img.remove();
-      img.closest(".bmark")?.classList.remove("has-logo");
+    if (!(img instanceof HTMLImageElement) || !img.hasAttribute("data-auto-logo")) return;
+    const badge = img.closest(".bmark");
+    img.remove();
+    if (!badge) return;
+    badge.classList.remove("has-logo");
+    if (badge.dataset.logoName) {
+      badge.classList.add("no-logo");
+      badge.title = `${badge.dataset.logoName} — no logo found; click to add one`;
     }
   }, true);
 }

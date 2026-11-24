@@ -100,7 +100,7 @@ _DOMAINS = [
     (("national highways", "nhai"), "nhai.gov.in"),
     (("nabard", "national bank for agriculture"), "nabard.org"),
     (("sidbi", "small industries development bank"), "sidbi.in"),
-    (("reserve bank", "rbi"), "rbi.org.in"),
+    (("reserve bank of india", "reserve bank", "rbi"), "rbi.org.in"),
     (("power grid", "india grid"), "powergrid.in"),
     (("ntpc",), "ntpc.co.in"),
     (("nhpc",), "nhpcindia.com"),
@@ -182,6 +182,127 @@ _DOMAINS = [
     (("kraken",), "kraken.com"),
     (("mudrex",), "mudrex.com"),
     (("metamask",), "metamask.io"),
+    # Listed companies (badges are keyed on the investee company name)
+    (("kcp",), "kcp.co.in"),
+    (("jk tyre",), "jktyre.com"),
+    (("srei",), "srei.com"),
+    (("karur vysya",), "karurvysyabank.com"),
+    (("dcb bank", "dcb"), "dcbank.in"),
+    (("karnataka bank",), "karnatakabank.com"),
+    (("city union bank",), "cityunionbank.com"),
+    (("tamilnad mercantile",), "tmpbank.com"),
+    (("csb bank",), "csb.bank"),
+    (("dhanlaxmi",), "dhanbank.com"),
+    (("rbl bank",), "rblbank.com"),
+    (("jammu and kashmir bank", "j and k bank", "jk bank"), "jkbank.com"),
+    (("bank of india",), "bankofindia.co.in"),
+    (("indian overseas bank",), "iob.in"),
+    (("uco bank",), "ucobank.com"),
+    (("punjab and sind",), "psbindia.com"),
+    (("itc hotels",), "itchotels.com"),
+    (("itc",), "itcportal.com"),
+    (("nestle",), "nestle.in"),
+    (("hindustan unilever", "hul"), "hul.co.in"),
+    (("britannia",), "britindia.co.in"),
+    (("dabur",), "dabur.com"),
+    (("marico",), "marico.com"),
+    (("godrej consumer",), "godrejcp.com"),
+    (("godrej properties",), "godrejproperties.com"),
+    (("godrej industries",), "godrejindustries.com"),
+    (("colgate",), "colgatepalmolive.co.in"),
+    (("asian paints",), "asianpaints.com"),
+    (("berger paints",), "bergerpaints.com"),
+    (("pidilite",), "pidilite.com"),
+    (("kalyan jewellers",), "kalyanjewellers.net"),
+    (("trent",), "trentlimited.com"),
+    (("avenue supermarts", "dmart"), "dmart.in"),
+    (("tata consultancy", "tcs"), "tcs.com"),
+    (("infosys",), "infosys.com"),
+    (("wipro",), "wipro.com"),
+    (("hcl tech",), "hcltech.com"),
+    (("tech mahindra",), "techmahindra.com"),
+    (("ltimindtree", "ltts"), "ltimindtree.com"),
+    (("mphasis",), "mphasis.com"),
+    (("persistent systems",), "persistent.com"),
+    (("coforge",), "coforge.com"),
+    (("tata elxsi",), "tataelxsi.com"),
+    (("oracle financial", "ofss"), "ofss.com"),
+    (("maruti",), "marutisuzuki.com"),
+    (("mahindra",), "mahindra.com"),
+    (("tata motors",), "tatamotors.com"),
+    (("tata steel",), "tatasteel.com"),
+    (("tata power",), "tatapower.com"),
+    (("tata chemicals",), "tatachemicals.com"),
+    (("tata consumer",), "tataconsumer.com"),
+    (("tata",), "tata.com"),
+    (("bajaj auto",), "bajajauto.com"),
+    (("hero motocorp", "hero honda"), "heromotocorp.com"),
+    (("tvs motor",), "tvsmotor.com"),
+    (("eicher", "royal enfield"), "eichermotors.com"),
+    (("ashok leyland",), "ashokleyland.com"),
+    (("escorts",), "escortsgroup.com"),
+    (("bosch",), "bosch.in"),
+    (("motherson",), "motherson.com"),
+    (("mrf",), "mrftyres.com"),
+    (("apollo tyres",), "apollotyres.com"),
+    (("ceat",), "ceat.com"),
+    (("balkrishna", "bkt"), "bkt-tires.com"),
+    (("exide",), "exideindustries.com"),
+    (("amara raja",), "amararajabatteries.com"),
+    (("polycab",), "polycab.com"),
+    (("havells",), "havells.com"),
+    (("dixon",), "dixoninfo.com"),
+    (("voltas",), "voltas.com"),
+    (("blue star",), "bluestarindia.com"),
+    (("crompton",), "crompton.co.in"),
+    (("siemens",), "siemens.co.in"),
+    (("cummins",), "cummins.com"),
+    (("bharat electronics", "bel"), "bel-india.in"),
+    (("hindustan aeronautics", "hal"), "hal-india.co.in"),
+    (("bhel", "bharat heavy"), "bhel.com"),
+    (("bharat forge",), "bharatforge.com"),
+    (("jsw steel",), "jsw.in"),
+    (("hindalco",), "hindalco.com"),
+    (("nalco", "national aluminium"), "nalcoindia.com"),
+    (("sail", "steel authority"), "sail.co.in"),
+    (("jindal steel",), "jindalsteelpower.com"),
+    (("grasim",), "grasim.com"),
+    (("ultratech",), "ultratechcement.com"),
+    (("ambuja",), "ambujacement.com"),
+    (("shree cement",), "shreecement.com"),
+    (("sun pharma",), "sunpharma.com"),
+    (("dr reddy",), "drreddys.com"),
+    (("cipla",), "cipla.com"),
+    (("divi",), "divislabs.com"),
+    (("lupin",), "lupin.com"),
+    (("aurobindo",), "aurobindo.com"),
+    (("apollo hospitals",), "apollohospitals.com"),
+    (("max healthcare",), "maxhealthcare.in"),
+    (("fortis",), "fortishealthcare.com"),
+    (("zomato", "eternal"), "zomato.com"),
+    (("nykaa", "fsn ecommerce"), "nykaa.com"),
+    (("irctc",), "irctc.co.in"),
+    (("indian hotels", "taj hotels"), "tajhotels.com"),
+    (("lemon tree",), "lemontreehotels.com"),
+    (("jubilant food", "dominos india"), "jubilantfoodworks.com"),
+    (("varun beverages",), "varunbeverages.com"),
+    (("united spirits",), "unitedspirits.in"),
+    (("torrent power",), "torrentpower.com"),
+    (("oil india",), "oil-india.com"),
+    (("petronet",), "petronetlng.in"),
+    (("indraprastha gas", "igl"), "igl.co.in"),
+    (("mahanagar gas",), "mahanagargas.com"),
+    (("gujarat gas",), "gujaratgas.com"),
+    (("container corporation", "concor"), "concorindia.co.in"),
+    (("irb infra",), "irb.co.in"),
+    (("gmr",), "gmrairports.com"),
+    (("indigo paints",), "indigopaints.com"),
+    (("indigo", "interglobe"), "goindigo.in"),
+    (("spicejet",), "spicejet.com"),
+    (("reliance power",), "reliancepower.co.in"),
+    (("piramal pharma",), "piramal.com"),
+    (("hdfc",), "hdfcbank.com"),
+    (("icici",), "icicibank.com"),
 ]
 
 _SKIP = {"other", "none", "na", "n a", "self", "cash", "savings", "bank", "default"}
@@ -215,6 +336,42 @@ def domain_for(name: str) -> str | None:
         if f" {keyword} " in padded:
             return domain
     return None
+
+
+# Words that only describe the legal form, not the brand.
+_LEGAL = {
+    "ltd", "limited", "co", "company", "corp", "corporation", "inc", "plc",
+    "pvt", "private", "the", "and", "of", "industries", "enterprises",
+    "holdings", "international", "group",
+}
+
+
+def _guess_domains(name: str) -> list[str]:
+    """Company-name guesses used when the keyword table has no entry.
+
+    Only multi-word names are guessed, so a single common word never maps to
+    a stranger's domain. Google's favicon service 404s for domains that do not
+    exist, so a wrong guess simply yields no logo.
+    """
+    norm = _norm(name)
+    if not norm or norm in _SKIP:
+        return []
+    words = [word for word in norm.split() if word not in _LEGAL]
+    if len(words) < 2:
+        return []
+    parts = []
+    for take in dict.fromkeys((len(words), 3, 2)):
+        if 2 <= take <= len(words):
+            part = "".join(words[:take])
+            if len(part) >= 6 and part not in parts:
+                parts.append(part)
+    domains = []
+    for part in parts:
+        for tld in (".com", ".co.in", ".in"):
+            candidate = f"{part}{tld}"
+            if candidate not in domains:
+                domains.append(candidate)
+    return domains
 
 
 def folder() -> Path:
@@ -251,6 +408,8 @@ def _sniff(blob: bytes) -> str | None:
         return ".jpg"
     if blob[:4] == b"RIFF" and blob[8:12] == b"WEBP":
         return ".webp"
+    if blob.startswith((b"GIF87a", b"GIF89a")):
+        return ".gif"
     head = blob[:400].lstrip()
     if head.startswith(b"<?xml") and b"<svg" in blob[:3000]:
         return ".svg"
@@ -261,14 +420,19 @@ def _sniff(blob: bytes) -> str | None:
     return None
 
 
-def _download(domain: str, timeout: float = 5.0) -> tuple[bytes, str] | None:
+def sniff(blob: bytes) -> str | None:
+    return _sniff(blob)
+
+
+def _download(domain: str, timeout: float = 5.0, strict: bool = False) -> tuple[bytes, str] | None:
     quoted = quote(domain)
     sources = [
         "https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON"
         f"&fallback_opts=TYPE,SIZE,URL&url=https://{quoted}&size=128",
         f"https://www.google.com/s2/favicons?domain={quoted}&sz=128",
-        f"https://icon.horse/icon/{quoted}",
     ]
+    if not strict:
+        sources.append(f"https://icon.horse/icon/{quoted}?fallback=404")
     for url in sources:
         try:
             response = requests.get(url, headers={"User-Agent": _UA}, timeout=timeout)
@@ -285,13 +449,15 @@ def _download(domain: str, timeout: float = 5.0) -> tuple[bytes, str] | None:
     return None
 
 
-def ensure(name: str, timeout: float = 4.0, skip_slugs: set | None = None) -> dict | None:
+def ensure(name: str, timeout: float = 6.0, skip_slugs: set | None = None) -> dict | None:
     """Return the cache entry for a name, fetching it once if needed."""
     key = slug(name)
     if not key or key in _SKIP or (skip_slugs and key in skip_slugs):
         return None
     domain = domain_for(name)
-    if not domain:
+    known = bool(domain)
+    domains = [domain] if domain else _guess_domains(name)
+    if not domains:
         return None
     with LOCK:
         index = _load_index()
@@ -308,7 +474,12 @@ def ensure(name: str, timeout: float = 4.0, skip_slugs: set | None = None) -> di
                 pass
         if len(index) > _MAX_LOGOS:
             return None
-        fetched = _download(domain, timeout=timeout)
+        fetched = None
+        for candidate in domains:
+            fetched = _download(candidate, timeout=timeout, strict=not known)
+            if fetched:
+                domain = candidate
+                break
         if not fetched:
             index[key] = {"name": name, "domain": domain, "miss": datetime.now(timezone.utc).isoformat()}
             _save_index(index)
@@ -330,6 +501,39 @@ def ensure(name: str, timeout: float = 4.0, skip_slugs: set | None = None) -> di
         index[key] = entry
         _save_index(index)
         return entry
+
+
+def save(name: str, blob: bytes) -> dict | None:
+    """Store a logo the user picked by hand; it beats any later auto fetch."""
+    key = slug(name)
+    ext = _sniff(blob or b"")
+    if not key or key in _SKIP or not ext:
+        return None
+    with LOCK:
+        index = _load_index()
+        old = index.get(key) or {}
+        filename = f"{key}{ext}"
+        try:
+            tmp = folder() / f".{filename}.tmp"
+            tmp.write_bytes(blob)
+            tmp.replace(folder() / filename)
+        except Exception:
+            return None
+        entry = {
+            "name": name.strip(),
+            "file": filename,
+            "custom": True,
+            "saved": datetime.now(timezone.utc).isoformat(),
+        }
+        index[key] = entry
+        _save_index(index)
+    old_file = old.get("file")
+    if old_file and old_file != filename:
+        try:
+            (folder() / old_file).unlink()
+        except OSError:
+            pass
+    return entry
 
 
 def cached_urls(skip_slugs: set | None = None) -> dict:

@@ -174,15 +174,20 @@ name and shows the date plus "N holdings across N members."
   carries the brand mark of the company behind it (fund house, bank, insurer, issuer or the
   listed company itself), with the broker shown as a small badge under the name instead.
   Logos for the companies already in the app ship with it — banks, insurers, AMCs,
-  India Post, and every listed stock (stock logos come from Groww, keyed by NSE
-  symbol). Anything the app recognises but has no image for is fetched
-  automatically from the company's website icon the first time it is shown and kept
-  in the app's data folder, so the same logo loads instantly next time — covers every
-  bank in the bank list, NBFCs, housing-finance companies, insurers, brokers and
-  bond issuers. Names are matched loosely, so "HDFC Bank Ltd" and "FD – Sundaram finance
-  – 12345" still find the right logo. To add or replace one, drop an image into
+  India Post, and every listed stock. Badges are matched on the investee company's
+  name (not the instrument or its symbol), so the same company shows the same mark
+  whether it is held as a stock, a bond or a deposit. Anything the app recognises
+  but has no image for is fetched automatically from the company's website icon the
+  first time it is shown and kept in the app's data folder, so the same logo loads
+  instantly next time — covers every bank in the bank list, NBFCs, housing-finance
+  companies, insurers, brokers, bond issuers and a long list of listed companies
+  (KCP, JK Tyre, SREI, Karur Vysya, DCB Bank…). Names are matched loosely, so
+  "HDFC Bank Ltd" and "FD – Sundaram finance – 12345" still find the right logo.
+  If no logo can be found anywhere, the coloured initials stay and you can click
+  the badge to pick your own JPG, PNG, WEBP or PDF — it is saved with the workspace
+  and reused for every later holding in that company. You can also drop a file into
   `static/img/logos/` named after the company or its symbol (`equitas-bank.png`,
-  `utkarsh.webp`); companies without an image keep their coloured initials.
+  `utkarsh.webp`).
 - **Member-wise investment** — each person's invested amount, current value, gain and share
   of the family portfolio.
 - **Investments by broker** — stocks and ETFs grouped by the broker or DP they were bought
