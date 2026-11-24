@@ -173,7 +173,12 @@ How it works:
   time you enable it, your existing local data is uploaded automatically.
 - After every successful add/edit/delete/import, the current members, holdings, demat
   accounts and activity are written to Firestore.
-- Re-downloadable caches (NSE prices, IFSC lookups) stay local; they are not family data.
+- Company logos someone uploaded by hand are written too, split into chunk documents in
+  the `deeptrack_logos` collection; a host that is missing them downloads them on startup.
+  Bundled and auto-fetched logos need no backup — the bundle ships with the app and the
+  rest can be fetched again.
+- Re-downloadable caches (NSE prices, IFSC lookups, auto-fetched logos) stay local; they
+  are not family data.
 - If Firebase is unreachable, the app keeps working locally and retries on the next change;
   the **Import / export** banner shows the last sync error.
 

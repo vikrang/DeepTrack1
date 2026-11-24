@@ -5079,7 +5079,7 @@ function storageCardHtml() {
       </div>`;
     }
     return `<div class="info-strip ok" style="margin-bottom:18px">${icon("checkCircle")}
-      <span><strong>Stored in the Firebase cloud.</strong> Every change is written to Firestore, so the portfolio always lives in the cloud and is reachable from any device${s.cloud && s.cloud.synced_at ? ` · last synced <span class="mono">${esc(s.cloud.synced_at)}</span>` : ""}.</span>
+      <span><strong>Stored in the Firebase cloud.</strong> Every change is written to Firestore — holdings, activity and uploaded company logos — so everything lives in the cloud and is reachable from any device${s.cloud && s.cloud.synced_at ? ` · last synced <span class="mono">${esc(s.cloud.synced_at)}</span>` : ""}.</span>
     </div>`;
   }
   if (s.mode === "cloud") {

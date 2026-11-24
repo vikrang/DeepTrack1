@@ -555,12 +555,11 @@ def ensure(name: str, timeout: float = 6.0, skip_slugs: set | None = None) -> di
         return entry
 
 
-def save(name: str, blob: bytes) -> dict | None:
-    """Store a logo the user picked by hand; it beats any later auto fetch."""
+def _store(name: str, blob: bytes, *, saved: str | None = None, tidy: bool = True) -> dict | None:
     key = slug(name)
     if not key or key in _SKIP or not _sniff(blob or b""):
         return None
-    blob, ext = _tidy(blob)
+    blob, ext = _tidy(blob) if tidy else (blob, _sniff(blob))
     if not ext:
         return None
     with LOCK:
@@ -577,7 +576,7 @@ def save(name: str, blob: bytes) -> dict | None:
             "name": name.strip(),
             "file": filename,
             "custom": True,
-            "saved": datetime.now(timezone.utc).isoformat(),
+            "saved": saved or datetime.now(timezone.utc).isoformat(),
         }
         index[key] = entry
         _save_index(index)
@@ -588,6 +587,26 @@ def save(name: str, blob: bytes) -> dict | None:
         except OSError:
             pass
     return entry
+
+
+def save(name: str, blob: bytes) -> dict | None:
+    """Store a logo the user picked by hand; it beats any later auto fetch."""
+    return _store(name, blob)
+
+
+def restore(name: str, blob: bytes, saved: str | None = None) -> dict | None:
+    """Keep a logo downloaded from the cloud verbatim, with its original timestamp."""
+    return _store(name, blob, saved=saved, tidy=False)
+
+
+def entries() -> dict:
+    """Every indexed logo whose file is on disk right now."""
+    base = folder()
+    out = {}
+    for key, entry in _load_index().items():
+        if isinstance(entry, dict) and entry.get("file") and (base / entry["file"]).is_file():
+            out[key] = dict(entry)
+    return out
 
 
 def cached_urls(skip_slugs: set | None = None) -> dict:

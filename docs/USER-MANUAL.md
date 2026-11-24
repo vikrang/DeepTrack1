@@ -186,8 +186,9 @@ name and shows the date plus "N holdings across N members."
   Click any company badge — whether it shows a bundled logo, a fetched one or
   coloured initials — to replace the picture with your own JPG, PNG, WEBP or PDF,
   as often as you like. White margins around the mark are trimmed automatically so
-  the logo fills the badge. Your picture is saved with the workspace and reused
-  for every later holding in that company. You can also drop a file into
+  the logo fills the badge. Your picture is saved with the workspace, copied to the
+  Firebase cloud when cloud storage is on (so it survives redeploys even on a host
+  without a persistent disk), and reused for every later holding in that company. You can also drop a file into
   `static/img/logos/` named after the company or its symbol (`equitas-bank.png`,
   `utkarsh.webp`).
 - **Member-wise investment** — each person's invested amount, current value, gain and share
@@ -922,7 +923,9 @@ so no manual download is needed there either.
 you make — add, edit, delete, import — is written straight to **Google Firestore**, so your
 portfolio **always lives and stays updated in the cloud**, no matter which computer or
 phone you use. The database file on disk (`data/tracker.db`) is just a fast local working
-copy that refreshes itself from the cloud on every start.
+copy that refreshes itself from the cloud on every start. Company logos you uploaded
+by hand travel with it: they are stored in Firestore in chunks and downloaded again
+whenever a copy of the app is missing them, so they do not depend on the host's disk.
 
 | How you use DeepTrack | Where the data lives | In the cloud? |
 | --- | --- | --- |
