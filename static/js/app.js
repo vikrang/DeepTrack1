@@ -119,7 +119,13 @@ function pickLogoFile(name) {
       const response = await fetch("/api/logo", { method: "POST", body: form });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Could not save the logo.");
-      applyLogo(name, `${data.url || autoLogoUrl(name)}&v=${Date.now()}`);
+      const url = `${data.url || autoLogoUrl(name)}&v=${Date.now()}`;
+      const key = brandSlug(name);
+      if (state.meta && key) {
+        state.meta.logos = { ...(state.meta.logos || {}), [key]: url };
+        state.meta.custom_logos = { ...(state.meta.custom_logos || {}), [key]: url };
+      }
+      applyLogo(name, url);
       toast(`Logo saved for ${name}`, "ok");
     } catch (error) {
       toast(error.message || "Could not save the logo.", "error");
@@ -129,7 +135,7 @@ function pickLogoFile(name) {
 }
 function applyLogo(name, url) {
   document.querySelectorAll(".bmark[data-logo-name]").forEach((badge) => {
-    if (badge.dataset.logoName !== name) return;
+    if (!sameLogoName(badge.dataset.logoName, name)) return;
     let img = badge.querySelector("img[data-auto-logo]");
     if (!img) {
       if (!badge.querySelector(".bmark-initials")) {
@@ -345,7 +351,10 @@ const LOGO_ALIASES = {
 };
 const LEGAL_TAIL = /-(limited|ltd|co|company|corp|corporation|inc|plc|pvt|private|india|enterprises|holdings)$/;
 function logoFor(name) {
-  const logos = state.meta?.logos || {};
+  return lookupLogo(state.meta?.logos, name);
+}
+function lookupLogo(map, name) {
+  const logos = map || {};
   const keys = Object.keys(logos);
   if (!keys.length) return "";
   let slug = brandSlug(name);
@@ -365,6 +374,15 @@ function logoFor(name) {
     if (key.length > best.length && padded.includes(`-${key}-`) && key.length >= 3) best = key;
   }
   return best ? logos[best] : "";
+}
+function customLogoFor(name) {
+  return lookupLogo(state.meta?.custom_logos, name);
+}
+function sameLogoName(a, b) {
+  const norm = (value) => brandSlug(value).replace(LEGAL_TAIL, "");
+  if (a === b) return true;
+  const left = norm(a);
+  return Boolean(left) && left === norm(b);
 }
 function issuerBadgeFromName(name, cls = "") {
   const label = String(name || "").trim();
@@ -392,6 +410,8 @@ function logoMark(label, logo, cls) {
 }
 function issuerBadge(item, cls = "") {
   const name = item?.issuer || issuerName(item);
+  const uploaded = name ? customLogoFor(name) : "";
+  if (uploaded) return logoMark(name, uploaded, cls);
   const symbol = symbolLogo(item);
   if (symbol) return logoMark(name || item?.symbol || "", symbol, `${cls} bsym`);
   return name ? issuerBadgeFromName(name, cls) : typeBadge(item, cls);

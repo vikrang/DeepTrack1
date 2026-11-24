@@ -366,7 +366,7 @@ def _logo_warm_names() -> list[str]:
 def warm_logos_async():
     """Fetch any missing brand logos in the background (one thread per call)."""
     app = current_app._get_current_object()
-    skip = set(_issuer_logos().keys())
+    skip = set(_issuer_logos().keys()) | set(logos.custom_urls().keys())
 
     def run():
         with app.app_context():
@@ -387,7 +387,7 @@ def auto_logo():
     name = (request.args.get("name") or "").strip()[:120]
     if not name:
         return jsonify(error="Logo not available"), 404
-    entry = logos.ensure(name, skip_slugs=set(_issuer_logos().keys()))
+    entry = logos.custom(name) or logos.ensure(name, skip_slugs=set(_issuer_logos().keys()))
     if not entry:
         return jsonify(error="Logo not available"), 404
     path = logos.folder() / entry["file"]
@@ -465,7 +465,9 @@ def meta():
     user = current_user()
     payload = fields.meta()
     bundled = _issuer_logos()
-    payload["logos"] = {**logos.cached_urls(skip_slugs=set(bundled)), **bundled}
+    custom = logos.custom_urls()
+    payload["logos"] = {**bundled, **logos.cached_urls(skip_slugs=set(bundled)), **custom}
+    payload["custom_logos"] = custom
     payload["me"] = services.user_payload(user, user)
     payload["members"] = [
         {"id": m["id"], "name": m["name"], "email": m["email"], "role": m["role"]}

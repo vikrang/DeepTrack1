@@ -551,6 +551,37 @@ def cached_urls(skip_slugs: set | None = None) -> dict:
     return urls
 
 
+def custom_urls() -> dict:
+    """User-picked logos; these win over bundled and auto-fetched images."""
+    urls = {}
+    index = _load_index()
+    base = folder()
+    for key, entry in index.items():
+        if not isinstance(entry, dict) or not entry.get("custom") or not entry.get("file"):
+            continue
+        if not (base / entry["file"]).is_file():
+            continue
+        stamp = ""
+        try:
+            stamp = f"&v={int(datetime.fromisoformat(entry['saved']).timestamp())}"
+        except Exception:
+            stamp = ""
+        urls[key] = f"/api/logo?name={quote(entry.get('name') or key, safe='')}{stamp}"
+    return urls
+
+
+def custom(name: str) -> dict | None:
+    """The user's own logo for a name, if one was saved."""
+    key = slug(name)
+    if not key:
+        return None
+    entry = _load_index().get(key)
+    if isinstance(entry, dict) and entry.get("custom") and entry.get("file"):
+        if (folder() / entry["file"]).is_file():
+            return entry
+    return None
+
+
 def warm(names, skip_slugs: set | None = None, pause: float = 0.15) -> int:
     """Fetch logos for a batch of names in the background. Returns how many were fetched."""
     fetched = 0
