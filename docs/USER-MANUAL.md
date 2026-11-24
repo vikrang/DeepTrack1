@@ -236,9 +236,19 @@ The page has these cards:
   interest, rent and other, and a Pending column. Admins can click **Record** to add a
   dividend, FD interest, rent or other receipt, marked *Received in bank* or *Expected,
   not yet credited*. Open the disclosure line to see and delete individual entries.
-- **Interest credited** — see *How the income estimate works* below. This is a guide to
-  interest your debt holdings actually pay out in the year; it is not added to any total
-  until you record the credit.
+- **Interest credited** — see *How the income estimate works* below. It shows only credits
+  **up to today** (the run date): payout interest accrued day by day, coupons already
+  paid, and cumulative deposits that matured by today. Anything later is in **Upcoming
+  credits**.
+- **Income calendar** — a daily heatmap of the financial year. **Year** zoom shows all
+  twelve months; click a month to zoom into it, then tap a day to see the credits — or
+  projected accruals — on that date. Solid shading is credited money, a dashed outline
+  is projected.
+- **Upcoming credits** — every future credit after today, grouped financial year by
+  financial year with a total for each FY, including cumulative deposits that mature then.
+- **Cumulative deposits** — principal, interest and **maturity value (principal +
+  interest)** for every cumulative FD, RD, NSC and cumulative bond, with the maturity
+  date and its financial year.
 - **Credit checklist** — every pending entry with the member's bank account and the
   expected date. An admin ticks an entry once the money reaches the bank; overdue items
   are red, items due within a week amber.
@@ -257,40 +267,43 @@ The page has these cards:
 
 ### How the income estimate works
 
-DeepTrack counts **only the interest that is actually credited in the selected financial
-year** (1 April to 31 March). Interest that simply builds up inside a deposit is not
-income until it is paid, so cumulative deposits and bonds are counted once — on their
-maturity date — and only if that date falls inside the year:
+DeepTrack counts only the interest **credited by the run date** inside the selected
+financial year (1 April to 31 March). Payout interest is counted day by day up to today;
+the rest of the year, and every later year, appears under **Upcoming credits** split
+financial year by financial year. Cumulative deposits and bonds roll interest into the
+principal, so they are counted once — on their maturity date — and are also listed in
+the **Cumulative deposits** card with principal, interest and maturity value:
 
 | Instrument | What it uses | When it is counted |
 | --- | --- | --- |
-| **Fixed deposit — paid out** | Rate, dates | Every year of the deposit: rate × days in the year ÷ 365 on the original amount. Interest leaves the deposit, so it does not compound. |
+| **Fixed deposit — paid out** | Rate, dates | Rate × days from 1 April (or the start date) to today ÷ 365 on the original amount; later days move to Upcoming credits. Interest leaves the deposit, so it does not compound. |
 | **Fixed deposit — cumulative** | Rate, start, maturity, compounding | Once, on the maturity date: interest grown to maturity minus the amount deposited (compounded, or simple if that is what you chose). |
 | **Recurring deposit** | Monthly amount, rate, start, maturity | Once, on the maturity date: each instalment earns from its own deposit date to maturity, summed. |
-| **Bonds, NCDs, G-Secs, SGB — with a frequency** | Quantity, face value, coupon rate, frequency | Each coupon whose date falls inside the year, counted separately. |
+| **Bonds, NCDs, G-Secs, SGB — with a frequency** | Quantity, face value, coupon rate, frequency | Each coupon whose date falls on or before today is credited; later coupons are in Upcoming credits, in the FY of their payout. |
 | **Bonds — cumulative (no frequency)** | Quantity, face value, rate, maturity | Once, on the maturity date: rate × amount × days held ÷ 365. |
-| **Small savings — MIS, SCSS** | Deposit, rate, dates | Paid out monthly or quarterly through the year, so every year of the holding counts. |
+| **Small savings — MIS, SCSS** | Deposit, rate, dates | Paid out monthly or quarterly through the year, so the year is counted day by day up to today. |
 | **Small savings — NSC, KVP, SSY, post office TD** | Deposit, rate, maturity | Once, on the maturity date: deposit × rate × days held ÷ 365. |
 
 PPF, EPF / VPF, NPS, equity and anything with no rate set are not estimated: their
-interest accrues inside the balance and is only money once withdrawn. Holdings that will
-mature after the selected year appear under **Paid at maturity · outside this year** so
-you know where the interest has gone — it is not counted yet.
+interest accrues inside the balance and is only money once withdrawn. Deposits that
+mature after today appear under **Upcoming credits** in the financial year of their
+maturity date, and in the **Cumulative deposits** card with the maturity value.
 
 **Worked examples for one full financial year:**
 
 | Holding | Calculation | Counted in the year |
 | --- | --- | --- |
-| FD ₹1,00,000 at 7%, interest paid out | 1,00,000 × 7% × 365 ÷ 365, every year | ₹7,000 |
+| FD ₹1,00,000 at 7%, interest paid out | 1,00,000 × 7% × 365 ÷ 365, every year | ₹7,000 for a past year; for the current year the part up to today, with the rest in Upcoming credits |
 | FD ₹1,00,000 at 7%, 3 years cumulative, quarterly | Maturity value 1,00,000 × (1 + 0.07 ÷ 4)^12 − 1,00,000 — counted only in the maturity year | ≈ ₹23,144 that year |
-| Bond 500 units, face ₹1,000, 7.18% semi-annual | 2 coupons × (5,00,000 × 7.18% ÷ 2) | ₹35,900 |
+| Bond 500 units, face ₹1,000, 7.18% semi-annual | 2 coupons × (5,00,000 × 7.18% ÷ 2) | ₹35,900 when both coupon dates have passed; otherwise the paid coupons now and the rest in Upcoming credits |
 | RD ₹10,000 a month at 7% for 3 years | Each instalment × 7% × its days to maturity ÷ 365, summed — counted only in the maturity year | ≈ ₹14,400 that year |
 | NSC ₹1,00,000 at 7.7% for 5 years | 1,00,000 × 7.7% × 1,826 ÷ 365 — counted only in the maturity year | ≈ ₹38,500 that year |
 
-The card shows the **To be credited** total, the **Recorded** interest you have already
-confirmed for those same holdings, and how many credits there are. Each row shows the
-basis, the credit date (a maturity date, or *paid during the year* for coupons and
-fixed-payout deposits) and a short note; click a row to open the holding.
+The card shows the **Credited to date** total, the **Recorded** interest you have already
+confirmed for those same holdings, and how many deposits there are. Each row shows the
+basis, the credit date or accrual period and a short note; click a row to open the
+holding. The maturity card shows principal and interest side by side, so the maturity
+value is always principal + interest.
 
 ---
 

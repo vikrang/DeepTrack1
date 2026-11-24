@@ -906,10 +906,60 @@ img { display: block; }
 .estimate-basis { font-size: 11px; color: var(--ink-2); margin-top: 1px; }
 .estimate-note { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
 .estimate-amt { font-size: 13px; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.estimate-deferred { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
-.estimate-deferred-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800; color: var(--muted); margin-bottom: 2px; }
-.estimate-deferred .estimate-row { padding: 7px 6px; }
-.estimate-deferred .estimate-name { font-weight: 650; color: var(--ink-2); }
+
+.fy-block { margin-top: 10px; }
+.fy-block + .fy-block { border-top: 1px solid var(--line-2); padding-top: 8px; }
+.fy-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 750; margin-bottom: 2px; }
+.fy-head b { color: var(--ink); font-size: 12px; letter-spacing: 0; }
+.fy-more { font-size: 11px; color: var(--muted); padding: 4px 6px 2px; }
+.cumulative-table th.num, .cumulative-table td.num { text-align: right; }
+.cumulative-table th:last-child, .cumulative-table td:last-child { text-align: left; }
+
+.income-calendar-card .card-head { align-items: flex-start; }
+.cal-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cal-nav { display: inline-flex; align-items: center; gap: 6px; }
+.cal-nav strong { font-size: 12.5px; min-width: 98px; text-align: center; }
+.cal-nav .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.cal-legend { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted); margin: 2px 0 12px; flex-wrap: wrap; }
+.cal-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; background: var(--surface-2); }
+.cal-swatch[style] { background: color-mix(in srgb, var(--brand) calc(var(--cal-level) * 1%), var(--surface-2)); }
+.cal-swatch.is-projected { background: transparent; outline: 1px dashed var(--muted-2); outline-offset: -1px; }
+.cal-legend-note { margin-left: 10px; display: inline-flex; align-items: center; gap: 5px; }
+.cal-months { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.cal-month { border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px 10px; background: var(--surface); cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.cal-month:hover { border-color: var(--brand); box-shadow: var(--shadow-xs); }
+.cal-month:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.cal-month-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 11.5px; margin-bottom: 6px; }
+.cal-month-head strong { font-weight: 750; }
+.cal-month-head span { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.cal-week { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 1px; }
+.cal-week span { font-size: 8px; text-align: center; color: var(--muted-2); font-weight: 700; }
+.cal-cell, .cal-blank { aspect-ratio: 1; min-width: 0; border-radius: 4px; }
+.cal-cell { display: grid; place-items: center; padding: 0; border: 1px solid transparent; background: var(--surface-2); color: var(--ink-2); font: inherit; }
+.cal-cell.has-income { background: color-mix(in srgb, var(--brand) calc(var(--cal-level) * 1%), var(--surface-2)); font-weight: 650; }
+.cal-cell.has-income.is-deep { color: #fff; }
+.cal-cell.is-projected.has-income { border: 1px dashed var(--muted-2); }
+.cal-cell.is-projected:not(.has-income) { background: transparent; border: 1px dashed var(--line); }
+.cal-cell.is-today { box-shadow: inset 0 0 0 2px var(--brand); }
+.cal-grid.is-full { max-width: 540px; }
+.cal-grid.is-full .cal-cell { cursor: pointer; font-size: 11.5px; transition: transform 0.1s ease; }
+.cal-grid.is-full .cal-cell:hover { transform: scale(1.06); }
+.cal-month-view { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.cal-hint { font-size: 12px; margin: 8px 2px 0; }
+.cal-day-panel { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; background: var(--surface-2); }
+.cal-day-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cal-day-head strong { font-size: 13px; }
+.cal-day-head span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.cal-day-head .icon-btn { margin-left: auto; }
+.cal-day-rows { display: flex; flex-direction: column; gap: 6px; }
+.cal-day-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 4px 2px; border-top: 1px solid var(--line-2); }
+.cal-day-row:first-child { border-top: 0; }
+.cal-day-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.cal-day-row strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cal-day-row.drillable { cursor: pointer; }
+.cal-day-row.drillable:hover .cal-day-name { color: var(--brand); }
+.cal-day-empty { font-size: 12px; margin: 4px 2px; }
 .gain-cell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
 .gain-num { font-weight: 650; font-variant-numeric: tabular-nums; }
 .gain-meta { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; opacity: 0.85; font-variant-numeric: tabular-nums; }
@@ -1593,6 +1643,11 @@ img { display: block; }
   .toolbar-right .select-compact { flex: 1 1 130px; min-width: 0; }
   .fx-top { display: inline-flex; }
   .fx-btn { display: none; }
+  .cal-months { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .cal-month-view { grid-template-columns: 1fr; gap: 12px; }
+  .cal-grid.is-full { max-width: none; }
+  .cal-grid.is-full .cal-cell { font-size: 12.5px; }
+  .cal-nav strong { min-width: 84px; }
   .page-actions { width: 100%; flex-wrap: wrap; }
   .page-actions .btn { flex: 1 1 auto; justify-content: center; }
   .icon-btn { min-width: 38px; min-height: 38px; }

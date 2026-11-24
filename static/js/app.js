@@ -448,6 +448,7 @@ const state = {
   investments: [],
   dashboard: null,
   income: null,
+  incomeCal: { zoom: "year", month: null, day: null },
   corporate: null,
   activity: null,
   activityLoading: false,
@@ -1441,12 +1442,15 @@ function renderIncome() {
     <div class="page-head">
       <div>
         <h2>Income · ${esc(state.income.year_label)}</h2>
-        <p>Dividends, interest and rent — recorded, pending and expected for the financial year.</p>
+        <p>Dividends, interest and rent — credited so far, upcoming financial year by financial year, and the daily calendar.</p>
       </div>
     </div>
     <div class="dash-grid">
       ${incomeCard()}
-      ${estimateCard()}
+      ${creditedInterestCard()}
+      ${incomeCalendarCard()}
+      ${upcomingInterestCard()}
+      ${cumulativeCard()}
       ${creditChecklistCard()}
       ${bankCard()}
       ${isAdmin() ? corporateCard() : ""}
@@ -1454,55 +1458,314 @@ function renderIncome() {
   hydrateIcons(view);
 }
 
-function estimateCard() {
+function creditedInterestCard() {
   const est = state.income?.estimate;
   if (!est) {
     return `<section class="card card-pad span-5"><div class="skeleton" style="height:220px"></div></section>`;
   }
   const items = est.items || [];
-  const deferred = est.deferred || [];
   const recorded = items.reduce((sum, item) => sum + (Number(item.recorded) || 0), 0);
   return `
     <section class="card card-pad span-5 estimate-card">
       <div class="card-head">
         <div>
           <div class="card-title">Interest credited · ${esc(est.label)}</div>
-          <div class="card-sub">Only interest paid out between 1 April and 31 March</div>
+          <div class="card-sub">Credits up to ${esc(fmtDate(est.cutoff))} — later ones are listed by financial year</div>
         </div>
-        <span class="pill pill-muted">${est.count} credit${est.count === 1 ? "" : "s"}</span>
+        <span class="pill pill-muted">${items.length} deposit${items.length === 1 ? "" : "s"}</span>
       </div>
       <div class="income-strip">
-        <div><span>To be credited</span><strong>${compactMoney(est.total)}</strong></div>
+        <div><span>Credited to date</span><strong>${compactMoney(est.total)}</strong></div>
         <div><span>Recorded</span><strong>${compactMoney(recorded)}</strong></div>
-        <div><span>Holdings</span><strong>${est.count}</strong></div>
+        <div><span>Deposits</span><strong>${items.length}</strong></div>
       </div>
       ${items.length ? `<div class="estimate-list">
-        ${items.map((item) => `
-          <div class="estimate-row drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
+        ${items.map((item) => {
+          const when = item.credited_on ? `credited ${fmtDate(item.credited_on)}`
+            : item.period ? `${esc(item.period)}` : "";
+          const meta = [when, item.recorded ? `recorded ${inr(item.recorded)}` : ""].filter(Boolean).join(" · ");
+          return `<div class="estimate-row drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
             <div class="estimate-main">
               <div class="estimate-name">${esc(item.investment)}</div>
-              <div class="estimate-basis">${esc(item.basis)}${item.credited_on ? ` · credited on ${fmtDate(item.credited_on)}` : " · paid during the year"}${item.recorded ? ` · recorded ${inr(item.recorded)}` : ""}</div>
-              <div class="estimate-note">${esc(item.note)}</div>
+              <div class="estimate-basis">${esc(item.basis)}${meta ? ` · ${meta}` : ""}</div>
+              <div class="estimate-note">${esc(item.note)}${item.partial ? " · accrual so far this year" : ""}</div>
             </div>
             <div class="estimate-amt">${inr2(item.amount)}</div>
-          </div>`).join("")}
+          </div>`;
+        }).join("")}
       </div>` : `<div class="empty compact">
         <div class="empty-icon">${icon("trendUp")}</div>
-        <h3>Nothing credited in ${esc(est.label)}</h3>
-        <p>Only interest actually paid out in this financial year is counted. Fill the rate and dates on fixed deposits, RDs and bonds to see it.</p>
+        <h3>Nothing credited in ${esc(est.label)} yet</h3>
+        <p>Payout interest is counted day by day up to today. Cumulative deposits count once, on their maturity date.</p>
       </div>`}
-      ${deferred.length ? `<div class="estimate-deferred">
-        <div class="estimate-deferred-head">Paid at maturity · outside ${esc(est.label)}</div>
-        ${deferred.map((item) => `
-          <div class="estimate-row drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
-            <div class="estimate-main">
-              <div class="estimate-name">${esc(item.investment)}</div>
-              <div class="estimate-basis">Interest added to the principal; the whole amount arrives on ${fmtDate(item.maturity)}</div>
-            </div>
-          </div>`).join("")}
-      </div>` : ""}
-      <p class="card-foot">Cumulative deposits and bonds roll interest into the principal and are counted once, on the maturity date. PPF, EPF and other accruing balances are not counted until the money is paid out.${est.skipped ? ` ${est.skipped} debt holding${est.skipped === 1 ? "" : "s"} skipped for missing rate or amount.` : ""}</p>
+      <p class="card-foot">Payout interest accrues daily and is shown to the run date. Cumulative deposits and bonds roll interest into the principal and are counted once, on maturity.${est.skipped ? ` ${est.skipped} debt holding${est.skipped === 1 ? "" : "s"} skipped for missing rate or amount.` : ""}</p>
     </section>`;
+}
+
+function upcomingInterestCard() {
+  const est = state.income?.estimate;
+  if (!est) {
+    return `<section class="card card-pad span-5"><div class="skeleton" style="height:220px"></div></section>`;
+  }
+  const groups = est.upcoming || [];
+  return `
+    <section class="card card-pad span-5 upcoming-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Upcoming credits</div>
+          <div class="card-sub">After ${esc(fmtDate(est.cutoff))}, financial year by financial year</div>
+        </div>
+        <span class="pill pill-muted">${compactMoney(est.upcoming_total || 0)}</span>
+      </div>
+      ${groups.length ? groups.map((group) => {
+        const shown = group.items.slice(0, 10);
+        const rest = group.items.length - shown.length;
+        return `<div class="fy-block">
+          <div class="fy-head"><strong>${esc(group.label)}</strong><span>${group.count} credit${group.count === 1 ? "" : "s"} · <b>${compactMoney(group.total)}</b></span></div>
+          ${shown.map((item) => {
+            const when = item.date ? fmtDate(item.date) : item.period || "";
+            return `<div class="estimate-row drillable" data-investment-id="${item.investment_id}" role="button" tabindex="0" title="Open ${esc(item.investment)}">
+              <div class="estimate-main">
+                <div class="estimate-name">${esc(item.investment)}</div>
+                <div class="estimate-basis">${esc(when)} · ${esc(item.basis)}</div>
+                <div class="estimate-note">${esc(item.note)}</div>
+              </div>
+              <div class="estimate-amt">${inr2(item.amount)}</div>
+            </div>`;
+          }).join("")}
+          ${rest > 0 ? `<div class="fy-more">+${rest} more in ${esc(group.label)}</div>` : ""}
+        </div>`;
+      }).join("") : `<div class="empty compact">
+        <div class="empty-icon">${icon("calendar")}</div>
+        <h3>No credits scheduled</h3>
+        <p>Fill the rate and dates on fixed deposits, RDs and bonds to project the rest of the year and later years.</p>
+      </div>`}
+      <p class="card-foot">Calculated from the saved rates and dates; the bank's actual credits can differ. Cumulative deposits appear here on their maturity date, and in detail in the maturity card.</p>
+    </section>`;
+}
+
+function cumulativeCard() {
+  const est = state.income?.estimate;
+  if (!est) {
+    return `<section class="card card-pad span-7"><div class="skeleton" style="height:220px"></div></section>`;
+  }
+  const list = est.cumulative || [];
+  return `
+    <section class="card card-pad span-7 cumulative-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Cumulative deposits · maturity value</div>
+          <div class="card-sub">Principal plus interest, paid once at maturity</div>
+        </div>
+        <span class="pill pill-muted">${compactMoney(est.cumulative_total || 0)}</span>
+      </div>
+      ${list.length ? `<div class="table-wrap">
+        <table class="mini-table cumulative-table">
+          <thead><tr><th>Deposit</th><th class="num">Principal</th><th class="num">Interest</th><th class="num">Maturity value</th><th>Matures</th></tr></thead>
+          <tbody>
+            ${list.map((entry) => `
+              <tr class="drillable" data-investment-id="${entry.investment_id}" title="Open ${esc(entry.investment)}">
+                <td>
+                  <div class="cell-name">${esc(entry.investment)}</div>
+                  <div class="cell-sub">${esc(entry.owner)} · ${esc(entry.type_label)}</div>
+                </td>
+                <td class="num">${amountCell(entry.principal)}</td>
+                <td class="num">${amountCell(entry.interest)}</td>
+                <td class="num"><strong>${amountCell(entry.maturity_amount)}</strong></td>
+                <td>
+                  <div class="cell-name">${fmtDate(entry.maturity_date)}</div>
+                  <div class="cell-sub">${entry.matured ? "Matured" : fyLabel(fyEndFromIso(entry.maturity_date))}</div>
+                </td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>` : `<div class="empty compact">
+        <div class="empty-icon">${icon("wallet")}</div>
+        <h3>No cumulative deposits yet</h3>
+        <p>Cumulative fixed deposits, RDs, NSC and similar balances appear here with the maturity value once principal, rate, start and maturity dates are filled.</p>
+      </div>`}
+      <p class="card-foot">Maturity value = principal + interest. Where the bank's maturity amount is saved it is used as-is.</p>
+    </section>`;
+}
+
+function fyEndFromIso(iso) {
+  const day = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(day.getTime())) return new Date().getFullYear();
+  return day.getFullYear() + (day.getMonth() >= 3 ? 1 : 0);
+}
+
+/* ---------- Income calendar ---------- */
+
+const CAL_WEEK = ["M", "T", "W", "T", "F", "S", "S"];
+const CAL_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const pad2 = (n) => String(n).padStart(2, "0");
+
+function fyMonths(year) {
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const offset = 3 + i;
+    months.push({ y: year - 1 + Math.floor(offset / 12), m: offset % 12 });
+  }
+  return months;
+}
+
+function calDefaultMonth(cal) {
+  if (!cal) return `${new Date().getFullYear()}-${pad2(new Date().getMonth() + 1)}`;
+  const today = cal.today || todayIso();
+  if (today >= cal.from && today <= cal.to) return today.slice(0, 7);
+  const keys = Object.keys(cal.days || {}).sort();
+  return (keys[0] || cal.from).slice(0, 7);
+}
+
+function calGridHtml(year, month, days, max, mini) {
+  const first = new Date(year, month, 1);
+  const lead = (first.getDay() + 6) % 7;
+  const count = new Date(year, month + 1, 0).getDate();
+  const today = state.income?.calendar?.today || todayIso();
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push(`<span class="cal-blank"></span>`);
+  for (let dayNo = 1; dayNo <= count; dayNo++) {
+    const iso = `${year}-${pad2(month + 1)}-${pad2(dayNo)}`;
+    const slot = days[iso] || {};
+    const total = (Number(slot.credited) || 0) + (Number(slot.expected) || 0);
+    const level = total ? Math.min(100, Math.max(10, Math.round(Math.sqrt(total / max) * 100))) : 0;
+    const cls = ["cal-cell"];
+    if (total) cls.push("has-income");
+    if (level >= 55) cls.push("is-deep");
+    if (iso > today) cls.push("is-projected");
+    if (iso === today) cls.push("is-today");
+    const title = `${fmtDate(iso)} · ${total ? inr2(total) : "No income"}`;
+    const style = total ? ` style="--cal-level:${level}"` : "";
+    cells.push(mini
+      ? `<span class="${cls.join(" ")}"${style} title="${esc(title)}"></span>`
+      : `<button class="${cls.join(" ")}" type="button" data-action="cal-day" data-day="${iso}"${style} title="${esc(title)}" aria-label="${esc(title)}">${dayNo}</button>`);
+  }
+  return `<div class="cal-grid${mini ? " is-mini" : " is-full"}">
+    <div class="cal-week">${CAL_WEEK.map((letter) => `<span>${letter}</span>`).join("")}</div>
+    ${cells.join("")}
+  </div>`;
+}
+
+function calDayPanel(cal, iso) {
+  const slot = cal.days[iso] || {};
+  const credited = Number(slot.credited) || 0;
+  const expected = Number(slot.expected) || 0;
+  const events = (cal.events || []).filter((event) => event.date === iso);
+  const lumps = (cal.lumps || []).filter((row) => row.date === iso);
+  const rows = [
+    ...events.map((event) => ({
+      label: event.kind_label, name: event.investment, amount: event.amount,
+      state: event.state, investment_id: event.investment_id,
+    })),
+    ...lumps.map((row) => ({
+      label: row.label, name: row.investment, amount: row.amount,
+      state: row.state, investment_id: row.investment_id,
+    })),
+  ];
+  const shown = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const residual = Math.max(0, Math.round((credited + expected - shown) * 100) / 100);
+  if (residual > 0.5) {
+    rows.push({
+      label: iso > cal.today ? "Projected accrual" : "Daily accrual",
+      name: "Payout interest across deposits", amount: residual,
+      state: iso > cal.today ? "expected" : "credited", investment_id: null,
+    });
+  }
+  return `<div class="cal-day-panel">
+    <div class="cal-day-head">
+      <strong>${fmtDate(iso)}</strong>
+      <span>${compactMoney(credited + expected)}</span>
+      <button class="icon-btn" type="button" data-action="cal-day-close" aria-label="Close day detail">${icon("close", "sm")}</button>
+    </div>
+    ${rows.length ? `<div class="cal-day-rows">
+      ${rows.map((row) => `
+        <div class="cal-day-row${row.investment_id ? " drillable" : ""}"${row.investment_id ? ` data-investment-id="${row.investment_id}" role="button" tabindex="0"` : ""}>
+          <span class="kind-tag">${esc(row.label)}</span>
+          <span class="cal-day-name">${esc(row.name)}</span>
+          <span class="pill ${row.state === "expected" ? "pill-muted" : "pill-ok"}">${row.state === "expected" ? "projected" : "credited"}</span>
+          <strong>${inr2(row.amount)}</strong>
+        </div>`).join("")}
+    </div>` : `<p class="muted cal-day-empty">No income recorded or expected on this date.</p>`}
+  </div>`;
+}
+
+function incomeCalendarCard() {
+  const cal = state.income?.calendar;
+  if (!cal) {
+    return `<section class="card card-pad span-12"><div class="skeleton" style="height:240px"></div></section>`;
+  }
+  const zoom = state.incomeCal.zoom === "month" ? "month" : "year";
+  const days = cal.days || {};
+  const totals = Object.values(days).map((slot) => (Number(slot.credited) || 0) + (Number(slot.expected) || 0));
+  const max = Math.max(1, ...totals);
+  let body = "";
+  if (zoom === "year") {
+    const months = fyMonths(cal.year).map((month) => {
+      const key = `${month.y}-${pad2(month.m + 1)}`;
+      const total = Object.keys(days).filter((iso) => iso.startsWith(key))
+        .reduce((sum, iso) => sum + (Number(days[iso].credited) || 0) + (Number(days[iso].expected) || 0), 0);
+      return `<div class="cal-month" role="button" tabindex="0" data-action="cal-open-month" data-month="${key}" title="Open ${CAL_MONTHS[month.m]} ${month.y}">
+        <div class="cal-month-head"><strong>${CAL_MONTHS[month.m]} ${String(month.y).slice(-2)}</strong><span>${total ? compactMoney(total) : "—"}</span></div>
+        ${calGridHtml(month.y, month.m, days, max, true)}
+      </div>`;
+    }).join("");
+    body = `<div class="cal-months">${months}</div>`;
+  } else {
+    const key = state.incomeCal.month || calDefaultMonth(cal);
+    const [year, monthNo] = key.split("-").map(Number);
+    const monthDate = new Date(year, monthNo - 1, 1);
+    const label = monthDate.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+    const fromKey = cal.from.slice(0, 7);
+    const toKey = cal.to.slice(0, 7);
+    const prev = new Date(year, monthNo - 2, 1);
+    const next = new Date(year, monthNo, 1);
+    const prevKey = `${prev.getFullYear()}-${pad2(prev.getMonth() + 1)}`;
+    const nextKey = `${next.getFullYear()}-${pad2(next.getMonth() + 1)}`;
+    const nav = `<div class="cal-nav">
+      <button class="icon-btn" type="button" data-action="cal-nav" data-dir="-1" ${prevKey < fromKey || key <= fromKey ? "disabled" : ""} aria-label="Previous month">‹</button>
+      <strong>${esc(label)}</strong>
+      <button class="icon-btn" type="button" data-action="cal-nav" data-dir="1" ${nextKey > toKey || key >= toKey ? "disabled" : ""} aria-label="Next month">›</button>
+    </div>`;
+    const detail = state.incomeCal.day ? calDayPanel(cal, state.incomeCal.day) : "";
+    body = `${nav}
+      <div class="cal-month-view">
+        ${calGridHtml(year, monthNo - 1, days, max, false)}
+        ${detail || `<p class="cal-hint muted">Tap a day to see what was credited — or is projected — that day.</p>`}
+      </div>`;
+  }
+  return `
+    <section class="card card-pad span-12 income-calendar-card" id="income-calendar">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Income calendar · ${esc(cal.label)}</div>
+          <div class="card-sub">Daily income across the financial year; zoom from the year to a month, then tap a day</div>
+        </div>
+        <div class="card-head-tools cal-tools">
+          <div class="segmented" role="group" aria-label="Calendar zoom">
+            <button class="seg ${zoom === "year" ? "active" : ""}" type="button" data-action="cal-zoom" data-zoom="year">Year</button>
+            <button class="seg ${zoom === "month" ? "active" : ""}" type="button" data-action="cal-zoom" data-zoom="month">Month</button>
+          </div>
+        </div>
+      </div>
+      <div class="cal-legend">
+        <span>Low</span>
+        <i class="cal-swatch" style="--cal-level:10"></i>
+        <i class="cal-swatch" style="--cal-level:38"></i>
+        <i class="cal-swatch" style="--cal-level:66"></i>
+        <i class="cal-swatch" style="--cal-level:100"></i>
+        <span>High</span>
+        <span class="cal-legend-note"><i class="cal-swatch is-projected"></i> projected</span>
+      </div>
+      ${body}
+    </section>`;
+}
+
+function paintIncomeCalendar() {
+  const host = $("#income-calendar");
+  if (!host) return;
+  host.outerHTML = incomeCalendarCard();
+  hydrateIcons($("#income-calendar"));
 }
 
 /* ============================================================
@@ -1916,6 +2179,7 @@ async function loadIncomeYear(year) {
   try {
     const data = await api(`/incomes?year=${encodeURIComponent(year)}`);
     state.income = data.income;
+    state.incomeCal = { zoom: "year", month: null, day: null };
     if (state.view === "dashboard") renderDashboard();
     else if (state.view === "income") renderIncome();
   } catch (error) {
@@ -5595,7 +5859,7 @@ function bindGlobalEvents() {
       closeSidebar();
       return;
     }
-    if (event.key === "Enter" && event.target.matches?.("[data-drill], [data-member-open], [data-investment-id]")) {
+    if (event.key === "Enter" && event.target.matches?.("[data-drill], [data-member-open], [data-investment-id], [data-action='cal-open-month']")) {
       event.preventDefault();
       event.target.click();
     }
@@ -5808,6 +6072,48 @@ async function handleClick(event) {
       } else {
         openHeaderFilter(actionEl);
       }
+      break;
+    case "cal-zoom": {
+      const cal = state.income?.calendar;
+      if (!cal) break;
+      state.incomeCal.zoom = actionEl.dataset.zoom === "month" ? "month" : "year";
+      if (state.incomeCal.zoom === "month" && !state.incomeCal.month) {
+        state.incomeCal.month = calDefaultMonth(cal);
+      }
+      state.incomeCal.day = null;
+      paintIncomeCalendar();
+      break;
+    }
+    case "cal-open-month": {
+      const cal = state.income?.calendar;
+      if (!cal) break;
+      state.incomeCal.zoom = "month";
+      state.incomeCal.month = actionEl.dataset.month || calDefaultMonth(cal);
+      state.incomeCal.day = null;
+      paintIncomeCalendar();
+      break;
+    }
+    case "cal-nav": {
+      const cal = state.income?.calendar;
+      if (!cal) break;
+      const current = state.incomeCal.month || calDefaultMonth(cal);
+      const [year, month] = current.split("-").map(Number);
+      const next = new Date(year, month - 1 + (Number(actionEl.dataset.dir) || 0), 1);
+      const key = `${next.getFullYear()}-${pad2(next.getMonth() + 1)}`;
+      if (key < cal.from.slice(0, 7) || key > cal.to.slice(0, 7)) break;
+      state.incomeCal.month = key;
+      state.incomeCal.day = null;
+      paintIncomeCalendar();
+      break;
+    }
+    case "cal-day":
+      if (!actionEl.dataset.day) break;
+      state.incomeCal.day = state.incomeCal.day === actionEl.dataset.day ? null : actionEl.dataset.day;
+      paintIncomeCalendar();
+      break;
+    case "cal-day-close":
+      state.incomeCal.day = null;
+      paintIncomeCalendar();
       break;
     case "layout":
       state.layout = actionEl.dataset.layout === "member" ? "member" : "flat";
