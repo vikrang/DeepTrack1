@@ -1,4 +1,4 @@
-import { icon } from "./icons.js?v=20261122e";
+import { icon } from "./icons.js?v=20261124c";
 
 /* ============================================================
    Utilities
@@ -655,6 +655,7 @@ function renderUserChrome() {
 function showAuth(mode) {
   closeModal();
   closeDrawer();
+  clearLockScreen();
   $("#boot")?.classList.add("hidden");
   $("#app").classList.add("hidden");
   $("#auth").classList.remove("hidden");
@@ -773,7 +774,7 @@ async function signInWithGoogle(button) {
     const result = await firebaseState.mod.signInWithPopup(firebaseState.auth, provider);
     const data = await exchangeFirebaseUser(result.user);
     state.me = data.user;
-    await startApp();
+    await startApp({ skipLock: true });
     toast(`Welcome, ${data.user.name.split(" ")[0]}`, "ok");
   } catch (error) {
     if (["auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(error?.code)) return;
@@ -807,7 +808,7 @@ function bindAuthForms() {
       });
       state.me = data.user;
       form.reset();
-      await startApp();
+      await startApp({ skipLock: true });
     } catch (error) {
       showFormError("#login-error", error.message);
     } finally {
@@ -836,7 +837,7 @@ function bindAuthForms() {
       });
       state.me = data.user;
       form.reset();
-      await startApp();
+      await startApp({ skipLock: true });
       toast("Workspace created. Welcome!", "ok");
     } catch (error) {
       const fields = error.data?.errors;
@@ -862,7 +863,584 @@ function bindAuthForms() {
   });
 }
 
-async function startApp() {
+/* ============================================================
+   App lock — 4-digit PIN + biometrics, per device
+   ============================================================ */
+
+const PIN_ITERATIONS = 150000;
+const LOCK_STORAGE = "deeptrack-applock:";
+const LOCK_TIMEOUTS = [
+  { key: "immediate", label: "Immediately" },
+  { key: "60000", label: "After 1 minute" },
+  { key: "300000", label: "After 5 minutes" },
+  { key: "never", label: "Only when reopened" },
+];
+const lockBio = { supported: null };
+let lockView = null;
+let lockHiddenAt = 0;
+
+const secureCryptoAvailable = () => Boolean(window.isSecureContext && window.crypto?.subtle);
+
+function lockStorageKey() {
+  return state.me?.id ? `${LOCK_STORAGE}${state.me.id}` : "";
+}
+
+function readLock() {
+  const key = lockStorageKey();
+  if (!key) return null;
+  try {
+    const data = JSON.parse(localStorage.getItem(key) || "null");
+    return data && data.pin?.hash && data.pin?.salt ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLock(data) {
+  const key = lockStorageKey();
+  if (!key) return;
+  if (data) localStorage.setItem(key, JSON.stringify(data));
+  else localStorage.removeItem(key);
+}
+
+function bytes64(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function from64(text) {
+  const base = String(text || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base + "=".repeat((4 - (base.length % 4)) % 4);
+  return Uint8Array.from(atob(padded), (ch) => ch.charCodeAt(0));
+}
+
+async function pinHash(pin, salt, iterations) {
+  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(pin)), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: from64(salt), iterations: Number(iterations) || PIN_ITERATIONS, hash: "SHA-256" },
+    material,
+    256,
+  );
+  return bytes64(bits);
+}
+
+async function verifyPin(store, pin) {
+  if (!store || !/^\d{4}$/.test(String(pin || ""))) return false;
+  try {
+    return (await pinHash(pin, store.pin.salt, store.pin.iterations)) === store.pin.hash;
+  } catch {
+    return false;
+  }
+}
+
+async function probeBiometric() {
+  if (lockBio.supported !== null) return lockBio.supported;
+  try {
+    lockBio.supported = Boolean(
+      window.isSecureContext &&
+      window.PublicKeyCredential &&
+      (await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()),
+    );
+  } catch {
+    lockBio.supported = false;
+  }
+  return lockBio.supported;
+}
+
+function wirePinInputs(root) {
+  $$(".pin-field", root).forEach((input) => {
+    input.addEventListener("input", () => {
+      input.value = input.value.replace(/\D+/g, "").slice(0, 4);
+    });
+  });
+}
+
+async function addBiometricUnlock() {
+  const store = readLock();
+  if (!store) {
+    toast("Set a 4-digit PIN first — biometrics unlock the same device", "warn");
+    return;
+  }
+  if (!(await probeBiometric())) {
+    toast("This browser or address can't use biometrics. The PIN still works.", "warn");
+    return;
+  }
+  try {
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: "DeepTrack", id: location.hostname },
+        user: {
+          id: crypto.getRandomValues(new Uint8Array(16)),
+          name: state.me?.email || "member",
+          displayName: state.me?.name || "DeepTrack member",
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: {
+          authenticatorAttachment: "platform",
+          userVerification: "required",
+          residentKey: "preferred",
+        },
+        timeout: 60000,
+        attestation: "none",
+      },
+    });
+    if (!credential) return;
+    writeLock({ ...store, biometric: { id: bytes64(credential.rawId), added: new Date().toISOString() } });
+    toast("Fingerprint / face unlock added for this device", "ok");
+    renderLockCard();
+  } catch (error) {
+    if (error?.name === "NotAllowedError") toast("Biometric setup was cancelled", "warn");
+    else toast("Biometrics could not be set up here. The PIN still works.", "error");
+  }
+}
+
+async function removeBiometricUnlock() {
+  const store = readLock();
+  if (!store?.biometric) return;
+  const ok = await confirmDialog({
+    title: "Remove biometric unlock?",
+    message: "DeepTrack will unlock with the 4-digit PIN only on this device. You can add biometrics again any time.",
+    confirmLabel: "Remove",
+  });
+  if (!ok) return;
+  writeLock({ ...store, biometric: null });
+  toast("Biometric unlock removed", "ok");
+  renderLockCard();
+}
+
+function lockScreenHtml(store) {
+  const me = state.me || {};
+  const first = String(me.name || "").trim().split(/\s+/)[0] || "Welcome back";
+  return `
+    <section class="lock-screen" role="dialog" aria-modal="true" aria-label="DeepTrack is locked">
+      <div class="lock-card">
+        <div class="lock-brand"><img src="/static/favicon.svg" alt="" width="30" height="30"><span>DeepTrack</span></div>
+        ${avatar(me.name || "DeepTrack", "lock-avatar")}
+        <h2 class="lock-hi">${esc(first)}</h2>
+        <p class="lock-sub">Enter your 4-digit PIN to unlock</p>
+        <div class="lock-dots" data-lock-dots aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="lock-msg" data-lock-msg role="alert"></div>
+        <div class="lock-pad">
+          ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => `<button class="lock-key" type="button" data-lock-key="${d}">${d}</button>`).join("")}
+          ${store.biometric
+            ? `<button class="lock-key lock-bio" type="button" data-lock-bio aria-label="Unlock with fingerprint or face">${icon("fingerprint")}</button>`
+            : `<span class="lock-key lock-key-ghost" aria-hidden="true"></span>`}
+          <button class="lock-key" type="button" data-lock-key="0">0</button>
+          <button class="lock-key lock-key-soft" type="button" data-lock-key="back" aria-label="Delete last digit">${icon("backspace")}</button>
+        </div>
+        <button class="lock-alt" type="button" data-lock-signout>Use password instead</button>
+        <p class="lock-foot">Locked on this device${store.biometric ? " · PIN or biometrics" : ""}</p>
+      </div>
+    </section>`;
+}
+
+function bindLockScreen(section) {
+  section?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const key = target.closest("[data-lock-key]");
+    if (key) {
+      event.preventDefault();
+      lockKeyPress(key.dataset.lockKey);
+      return;
+    }
+    if (target.closest("[data-lock-bio]")) {
+      event.preventDefault();
+      biometricUnlock();
+      return;
+    }
+    if (target.closest("[data-lock-signout]")) {
+      event.preventDefault();
+      leaveLockScreen();
+    }
+  });
+}
+
+function showLockScreen(store, { overlay = false } = {}) {
+  clearLockScreen();
+  document.body.classList.add("is-locked");
+  if (!overlay) $("#boot")?.classList.add("hidden");
+  const root = $("#lock-root");
+  if (!root) return Promise.resolve(true);
+  root.innerHTML = lockScreenHtml(store);
+  return new Promise((resolve) => {
+    lockView = { store, overlay, buffer: "", failures: 0, cooldownUntil: 0, busy: false, resolve };
+    bindLockScreen(root.firstElementChild);
+    paintLockDots();
+  });
+}
+
+function ensureUnlocked() {
+  const store = readLock();
+  if (!store) return Promise.resolve(true);
+  if (lockView) return Promise.resolve(false);
+  return showLockScreen(store);
+}
+
+function clearLockScreen() {
+  lockView = null;
+  const root = $("#lock-root");
+  if (root) root.innerHTML = "";
+  document.body.classList.remove("is-locked");
+}
+
+function setLockMsg(text) {
+  const box = $("[data-lock-msg]");
+  if (box) box.textContent = text || "";
+}
+
+function paintLockDots() {
+  const filled = lockView ? lockView.buffer.length : 0;
+  $$("[data-lock-dots] i").forEach((dot, index) => dot.classList.toggle("full", index < filled));
+}
+
+function lockKeyPress(key) {
+  if (!lockView || lockView.busy) return;
+  if (key === "back") {
+    lockView.buffer = lockView.buffer.slice(0, -1);
+    setLockMsg("");
+    paintLockDots();
+    return;
+  }
+  if (!/^\d$/.test(String(key)) || lockView.buffer.length >= 4) return;
+  lockView.buffer += key;
+  setLockMsg("");
+  paintLockDots();
+  if (lockView.buffer.length === 4) setTimeout(checkLockPin, 130);
+}
+
+async function checkLockPin() {
+  if (!lockView || lockView.busy) return;
+  if (lockView.buffer.length !== 4) return;
+  if (Date.now() < lockView.cooldownUntil) {
+    const secs = Math.ceil((lockView.cooldownUntil - Date.now()) / 1000);
+    setLockMsg(`Try again in ${secs} second${secs === 1 ? "" : "s"}.`);
+    lockView.buffer = "";
+    paintLockDots();
+    return;
+  }
+  lockView.busy = true;
+  const ok = await verifyPin(lockView.store, lockView.buffer);
+  if (!lockView) return;
+  lockView.busy = false;
+  if (ok) {
+    completeUnlock();
+    return;
+  }
+  lockView.failures += 1;
+  lockView.buffer = "";
+  paintLockDots();
+  const dots = $("[data-lock-dots]");
+  if (dots) {
+    dots.classList.remove("shake");
+    void dots.offsetWidth;
+    dots.classList.add("shake");
+  }
+  navigator.vibrate?.(40);
+  if (lockView.failures >= 5) {
+    lockView.failures = 0;
+    lockView.cooldownUntil = Date.now() + 30000;
+    setLockMsg("Too many wrong PINs. Wait 30 seconds, or use your password below.");
+  } else {
+    const left = 5 - lockView.failures;
+    setLockMsg(`Incorrect PIN — ${left} attempt${left === 1 ? "" : "s"} left.`);
+  }
+}
+
+async function biometricUnlock() {
+  if (!lockView || lockView.busy || !lockView.store.biometric) return;
+  lockView.busy = true;
+  setLockMsg("");
+  try {
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rpId: location.hostname,
+        allowCredentials: [{ type: "public-key", id: from64(lockView.store.biometric.id) }],
+        userVerification: "required",
+        timeout: 60000,
+      },
+    });
+    if (assertion && lockView) completeUnlock();
+  } catch (error) {
+    if (!lockView) return;
+    if (error?.name === "NotAllowedError") setLockMsg("Biometric unlock was cancelled — use your PIN.");
+    else setLockMsg("Biometrics are unavailable here — use your PIN.");
+  } finally {
+    if (lockView) lockView.busy = false;
+  }
+}
+
+function completeUnlock() {
+  if (!lockView) return;
+  const resolve = lockView.resolve;
+  clearLockScreen();
+  resolve?.(true);
+}
+
+async function leaveLockScreen() {
+  const resolve = lockView?.resolve;
+  clearLockScreen();
+  await signOut({ announce: false });
+  resolve?.(false);
+}
+
+function lockNow() {
+  if (lockView) return;
+  const store = readLock();
+  if (!store) {
+    toast("Set a 4-digit app PIN first", "warn");
+    return;
+  }
+  closeDrawer();
+  closeModal();
+  closeSidebar();
+  showLockScreen(store, { overlay: true });
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === "hidden") {
+    if (state.me && !lockView) lockHiddenAt = Date.now();
+    return;
+  }
+  const since = lockHiddenAt;
+  lockHiddenAt = 0;
+  if (!since || lockView || !state.me) return;
+  const store = readLock();
+  if (!store || store.autoLock === "never") return;
+  const wait = store.autoLock === "immediate" ? 0 : Number(store.autoLock) || 0;
+  if (Date.now() - since >= wait) lockNow();
+}
+
+function lockCardHtml() {
+  const store = readLock();
+  const on = Boolean(store);
+  const bio = Boolean(store?.biometric);
+  const secure = secureCryptoAvailable();
+  const supported = lockBio.supported;
+  const timeout = store?.autoLock || "60000";
+  return `
+    <section class="card card-pad span-12" data-lock-card>
+      <div class="card-head">
+        <div>
+          <div class="card-title">App lock</div>
+          <div class="card-sub">A 4-digit PIN${bio ? " and biometrics" : ""} on this device — the portfolio stays behind it</div>
+        </div>
+        <span class="pill ${on ? "pill-ok" : ""}">${on ? "On" : "Off"}</span>
+      </div>
+      <div class="divider" style="margin-top:0"></div>
+      <div class="lock-grid">
+        <div class="lock-item">
+          <div class="lock-item-icon">${icon("lock")}</div>
+          <div class="lock-item-main">
+            <div class="lock-item-title">4-digit PIN</div>
+            <div class="lock-item-sub">${on ? "Asked every time DeepTrack opens on this device" : "Add a PIN so DeepTrack asks for it when it opens"}</div>
+          </div>
+          <div class="lock-item-act">${on
+            ? `<button class="btn btn-secondary btn-sm" type="button" data-action="lock-change-pin">Change</button>`
+            : `<button class="btn btn-primary btn-sm" type="button" data-action="lock-set-pin" ${secure ? "" : "disabled"}>Set PIN</button>`}</div>
+        </div>
+        <div class="lock-item">
+          <div class="lock-item-icon">${icon("fingerprint")}</div>
+          <div class="lock-item-main">
+            <div class="lock-item-title">Face ID / fingerprint</div>
+            <div class="lock-item-sub">${bio
+              ? "Unlock with this device's biometrics"
+              : supported === false
+                ? "Not available in this browser or on this address"
+                : "Use this device's fingerprint or face instead of the PIN"}</div>
+          </div>
+          <div class="lock-item-act">${bio
+            ? `<button class="btn btn-secondary btn-sm" type="button" data-action="lock-bio-remove">Remove</button>`
+            : `<button class="btn btn-secondary btn-sm" type="button" data-action="lock-bio-add" ${on && supported ? "" : "disabled"}>Add</button>`}</div>
+        </div>
+        <div class="lock-item">
+          <div class="lock-item-icon">${icon("clock")}</div>
+          <div class="lock-item-main">
+            <div class="lock-item-title">Ask again</div>
+            <div class="lock-item-sub">When you come back to the app after leaving it</div>
+          </div>
+          <div class="lock-item-act">
+            <select data-lock-timeout aria-label="When to ask for the PIN" ${on ? "" : "disabled"}>
+              ${LOCK_TIMEOUTS.map((t) => `<option value="${t.key}" ${timeout === t.key ? "selected" : ""}>${t.label}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="lock-foot-row">
+        ${on
+          ? `<button class="btn btn-secondary btn-sm" type="button" data-action="lock-now">${icon("lock")} Lock now</button>
+             <button class="btn btn-ghost btn-sm" type="button" data-action="lock-off">Turn off app lock</button>`
+          : `<span class="muted lock-note">${secure
+              ? "Only a one-way hash of the PIN is stored, and only on this device. Forgot it? Use “Use password instead” on the lock screen."
+              : "App lock needs the secure https address (or localhost). Open DeepTrack's hosted link to use it."}</span>`}
+      </div>
+    </section>`;
+}
+
+function renderLockCard() {
+  if (state.view !== "profile") return;
+  const card = $("[data-lock-card]");
+  if (!card) return;
+  card.outerHTML = lockCardHtml();
+  hydrateIcons($("[data-lock-card]"));
+}
+
+function openPinModal(mode = "set") {
+  const store = readLock();
+  const changing = mode === "change" && Boolean(store);
+  if (!secureCryptoAvailable()) {
+    toast("App lock needs the secure https address (or localhost).", "warn");
+    return;
+  }
+  openModal({
+    title: changing ? "Change app PIN" : "Set app PIN",
+    subtitle: "Four digits. Only a one-way hash is stored on this device — the PIN never reaches the server.",
+    size: "modal-sm",
+    body: `
+      <form id="pin-form" novalidate>
+        ${changing ? `<label class="field"><span>Current PIN</span>
+          <input class="pin-field" type="password" inputmode="numeric" autocomplete="off" maxlength="4" name="current" placeholder="••••">
+        </label>` : ""}
+        <label class="field"><span>${changing ? "New PIN" : "PIN"}</span>
+          <input class="pin-field" type="password" inputmode="numeric" autocomplete="new-password" maxlength="4" name="pin" placeholder="••••">
+        </label>
+        <label class="field"><span>Confirm PIN</span>
+          <input class="pin-field" type="password" inputmode="numeric" autocomplete="new-password" maxlength="4" name="confirm" placeholder="••••">
+        </label>
+        <div class="form-error hidden" data-pin-error role="alert"></div>
+      </form>`,
+    footer: `
+      <button class="btn btn-secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="button" data-save>${icon("lock")} Save PIN</button>`,
+    onMount(backdrop, close) {
+      const form = backdrop.querySelector("#pin-form");
+      const button = backdrop.querySelector("[data-save]");
+      wirePinInputs(form);
+      const fail = (message) => {
+        const box = backdrop.querySelector("[data-pin-error]");
+        box.textContent = message;
+        box.classList.remove("hidden");
+      };
+      button.addEventListener("click", async () => {
+        if (changing && !(await verifyPin(store, form.current.value))) {
+          fail("The current PIN is incorrect.");
+          return;
+        }
+        if (!/^\d{4}$/.test(form.pin.value)) {
+          fail("Enter exactly 4 digits.");
+          return;
+        }
+        if (form.pin.value !== form.confirm.value) {
+          fail("The two PINs do not match.");
+          return;
+        }
+        button.disabled = true;
+        button.innerHTML = `<span class="spinner"></span> Saving…`;
+        try {
+          const salt = bytes64(crypto.getRandomValues(new Uint8Array(16)));
+          const hash = await pinHash(form.pin.value, salt, PIN_ITERATIONS);
+          writeLock({
+            ...(store || {}),
+            version: 1,
+            pin: { salt, hash, iterations: PIN_ITERATIONS },
+            autoLock: store?.autoLock || "60000",
+            updatedAt: new Date().toISOString(),
+          });
+          close();
+          toast("App PIN saved — DeepTrack will ask for it next time it opens", "ok");
+          renderLockCard();
+        } catch {
+          button.disabled = false;
+          button.innerHTML = `${icon("lock")} Save PIN`;
+          fail("The PIN could not be saved on this device.");
+        }
+      });
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        button.click();
+      });
+    },
+  });
+}
+
+function askPinDialog({ title, message, confirmLabel = "Continue" }) {
+  return new Promise((resolve) => {
+    state.modalResolver = () => resolve(null);
+    openModal({
+      title,
+      subtitle: message,
+      size: "modal-sm",
+      body: `
+        <label class="field"><span>4-digit PIN</span>
+          <input class="pin-field" type="password" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="••••">
+        </label>
+        <div class="form-error hidden" data-pin-error role="alert"></div>`,
+      footer: `
+        <button class="btn btn-secondary" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="button" data-ok>${esc(confirmLabel)}</button>`,
+      onMount(backdrop) {
+        const input = backdrop.querySelector(".pin-field");
+        const box = backdrop.querySelector("[data-pin-error]");
+        wirePinInputs(backdrop);
+        const submit = () => {
+          if (!/^\d{4}$/.test(input.value)) {
+            box.textContent = "Enter the 4-digit PIN.";
+            box.classList.remove("hidden");
+            return;
+          }
+          const value = input.value;
+          state.modalResolver = null;
+          closeModal();
+          resolve(value);
+        };
+        backdrop.querySelector("[data-ok]").addEventListener("click", submit);
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") submit();
+        });
+      },
+    });
+  });
+}
+
+async function disableAppLock() {
+  const store = readLock();
+  if (!store) return;
+  const pin = await askPinDialog({
+    title: "Turn off app lock?",
+    message: "DeepTrack will open without asking for a PIN or biometrics on this device.",
+    confirmLabel: "Turn off",
+  });
+  if (!pin) return;
+  if (!(await verifyPin(store, pin))) {
+    toast("That PIN is incorrect", "error");
+    return;
+  }
+  writeLock(null);
+  toast("App lock turned off on this device", "ok");
+  renderLockCard();
+}
+
+async function signOut({ announce = true } = {}) {
+  try { await api("/logout", { method: "POST" }); } catch { /* ignore */ }
+  try { if (firebaseState.auth) await firebaseState.mod.signOut(firebaseState.auth); } catch { /* ignore */ }
+  state.me = null;
+  state.dashboard = null;
+  state.income = null;
+  state.corporate = null;
+  state.investments = [];
+  state.members = [];
+  state.importPreview = null;
+  state.marketStatus = null;
+  state.storageStatus = null;
+  state.selected.clear();
+  location.hash = "";
+  showAuth("login");
+  if (announce) toast("Signed out", "ok");
+}
+
+async function startApp({ skipLock = false } = {}) {
+  if (!skipLock && !(await ensureUnlocked())) return;
   $("#auth").classList.add("hidden");
   $("#app").classList.remove("hidden");
   await refreshData();
@@ -4644,9 +5222,14 @@ function renderProfile() {
           <span>Access is role-based. Admins can add or edit every holding; viewers can browse but not change data.</span>
         </div>
       </section>
+
+      ${lockCardHtml()}
     </div>
   `;
   hydrateIcons($("#view"));
+  probeBiometric().then(() => {
+    if (state.view === "profile") renderLockCard();
+  });
 }
 
 /* ============================================================
@@ -5833,23 +6416,9 @@ function bindGlobalEvents() {
     applyTheme(current === "dark" ? "light" : "dark");
   });
 
-  $("#logout-btn")?.addEventListener("click", async () => {
-    try { await api("/logout", { method: "POST" }); } catch { /* ignore */ }
-    try { if (firebaseState.auth) await firebaseState.mod.signOut(firebaseState.auth); } catch { /* ignore */ }
-    state.me = null;
-    state.dashboard = null;
-    state.income = null;
-    state.corporate = null;
-    state.investments = [];
-    state.members = [];
-    state.importPreview = null;
-    state.marketStatus = null;
-    state.storageStatus = null;
-    state.selected.clear();
-    location.hash = "";
-    showAuth("login");
-    toast("Signed out", "ok");
-  });
+  $("#logout-btn")?.addEventListener("click", () => signOut());
+
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
   $("#quick-add")?.addEventListener("click", () => openInvestmentModal());
   $("#topbar-user")?.addEventListener("click", () => { location.hash = "#/profile"; });
@@ -5863,6 +6432,19 @@ function bindGlobalEvents() {
   window.addEventListener("hashchange", () => route());
 
   document.addEventListener("keydown", (event) => {
+    if (lockView) {
+      if (/^\d$/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        lockKeyPress(event.key);
+      } else if (event.key === "Backspace") {
+        event.preventDefault();
+        lockKeyPress("back");
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        checkLockPin();
+      }
+      return;
+    }
     if (event.key === "Escape") {
       closeDrawer();
       closeModal();
@@ -5877,6 +6459,11 @@ function bindGlobalEvents() {
 
   document.addEventListener("change", (event) => {
     const el = event.target;
+    if (el.hasAttribute?.("data-lock-timeout")) {
+      const store = readLock();
+      if (store) writeLock({ ...store, autoLock: el.value });
+      return;
+    }
     if (el.matches?.("[data-income-year]")) {
       loadIncomeYear(el.value);
       return;
@@ -5967,6 +6554,7 @@ function bindGlobalEvents() {
 }
 
 async function handleClick(event) {
+  if (lockView) return;
   if (event.target.closest(".select-cell, #select-all, [data-select-id]")) return;
 
   const nav = event.target.closest("[data-nav]");
@@ -6011,6 +6599,24 @@ async function handleClick(event) {
   const id = actionEl.dataset.id ? Number(actionEl.dataset.id) : null;
 
   switch (action) {
+    case "lock-set-pin":
+      openPinModal("set");
+      break;
+    case "lock-change-pin":
+      openPinModal("change");
+      break;
+    case "lock-off":
+      await disableAppLock();
+      break;
+    case "lock-now":
+      lockNow();
+      break;
+    case "lock-bio-add":
+      await addBiometricUnlock();
+      break;
+    case "lock-bio-remove":
+      await removeBiometricUnlock();
+      break;
     case "add-investment":
       openInvestmentModal();
       break;

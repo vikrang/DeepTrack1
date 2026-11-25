@@ -883,6 +883,35 @@ bank and branch from the free Razorpay IFSC directory. You can always type them 
 
 > Only you and the Admins see your full KYC and bank numbers; everyone else sees them masked.
 
+### App lock — a 4-digit PIN and Face ID / fingerprint
+
+The **App lock** card at the bottom of **My profile** keeps the app behind a phone-style
+lock on *this* device. Every member sets their own; it is not a workspace setting.
+
+1. Click **Set PIN**, type a **4-digit PIN** twice, and click **Save PIN**.
+2. Optionally click **Add** next to **Face ID / fingerprint** — your phone (or laptop)
+   asks once for its fingerprint, face or screen-lock PIN, and DeepTrack remembers that
+   authenticator for future unlocks. If the browser can't do biometrics, the button is
+   disabled with a note; the PIN always works.
+3. Choose **Ask again**: *Immediately*, *After 1 minute* (default), *After 5 minutes* or
+   *Only when reopened*. This is how long DeepTrack can sit in the background before it
+   locks when you come back to it. It always locks when you open it fresh.
+
+From then on DeepTrack shows a lock screen with your name, four dots and a keypad. Type
+the PIN (or tap the fingerprint button) to unlock. Five wrong PINs pause the keypad for
+30 seconds. **Lock now** locks immediately; **Turn off app lock** (asks for the PIN)
+removes it from this device, and **Change** replaces the PIN.
+
+The PIN is stored on the phone only, and only as a one-way hash (PBKDF2) — it is never
+sent to the server. There is no "reset PIN" because the server never has it. Forgot the
+PIN? Tap **Use password instead** on the lock screen: DeepTrack signs out and you sign in
+again with your normal password. Your data and the lock stay as they were; set a new PIN
+from My profile whenever you like.
+
+> The app lock needs the secure **https** address (the hosted DeepTrack link, or
+> localhost on the computer). Plain `http://` addresses such as the LAN address still
+> run the app but cannot use the app lock or biometrics.
+
 ---
 
 ## 19. Masters: saving demat accounts
@@ -1058,8 +1087,20 @@ may need adjusting — that's in `docs/DEPLOYMENT.md`.
 Double-click `start.bat` in the DeepTrack folder and wait for *DeepTrack running*, then
 press **Retry**. When the server stops, DeepTrack shows that status page instead of a
 remembered old screen, so an out-of-date view can no longer appear. The tiny line at the
-bottom of the sidebar (**Build 2026.11.24b**) tells you which copy is loaded; after an
+bottom of the sidebar (**Build 2026.11.24c**) tells you which copy is loaded; after an
 update it should change. If it doesn't, refresh the page once (Ctrl+F5).
+
+**I forgot my app PIN.**
+Tap **Use password instead** on the lock screen and sign in with your normal password,
+then set a new PIN in **My profile → App lock**. The PIN exists only on the phone as a
+hash, so there is nothing to reset on the server. If **Add** for Face ID / fingerprint is
+disabled, the browser on that device (or a plain `http://` address) can't do biometrics —
+the PIN still works.
+
+**Why can't I set an app PIN on the LAN address?**
+The lock uses the browser's secure-crypto and biometric APIs, which browsers only expose
+on `https://` pages (or localhost). Use the hosted DeepTrack address to set it up; the
+LAN address keeps working without the lock.
 
 ---
 
@@ -1096,6 +1137,10 @@ the same permissions.
 4. Launch DeepTrack from its icon — it opens full screen like a native app and keeps
    your session. The dashboard, holdings, incomes and member pages are all reachable,
    and admin actions work the same as on the computer.
+5. Recommended on a phone: open **My profile → App lock** and set a **4-digit PIN**, then
+   add **Face ID / fingerprint** (see [section 18](#18-your-profile-kyc-and-bank-details)).
+   After that the app asks for the PIN or biometrics each time it opens, so handing the
+   phone to someone doesn't hand them the portfolio.
 
 Changes sync instantly through **Firebase cloud storage** if it is configured
 (section 19); without it, they live on the hosting provider's disk, so use the same

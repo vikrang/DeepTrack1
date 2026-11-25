@@ -1709,3 +1709,103 @@ img { display: block; }
   .topbar { padding-top: env(safe-area-inset-top); }
 }
 
+/* ============================================================
+   App lock — PIN + biometrics
+   ============================================================ */
+
+body.is-locked { overflow: hidden; }
+
+.lock-screen {
+  position: fixed; inset: 0; z-index: 4000;
+  display: grid; place-items: center; padding: 24px;
+  background: var(--bg);
+}
+.lock-screen::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(620px 420px at 50% -8%, var(--brand-glow), transparent 70%);
+}
+.lock-card { position: relative; width: min(360px, 100%); text-align: center; }
+.lock-brand {
+  display: inline-flex; align-items: center; gap: 9px; margin-bottom: 26px;
+  font-size: 15px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink);
+}
+.lock-avatar.avatar {
+  width: 64px; height: 64px; margin: 0 auto 14px; font-size: 22px;
+  box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.4);
+}
+.lock-hi { margin: 0 0 4px; font-size: 20px; letter-spacing: -0.02em; }
+.lock-sub { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+.lock-dots { display: flex; justify-content: center; gap: 14px; height: 16px; margin-bottom: 8px; }
+.lock-dots i {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 1.5px solid var(--muted-2); background: transparent;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.lock-dots i.full { background: var(--brand); border-color: var(--brand); transform: scale(1.1); }
+.lock-dots.shake { animation: lock-shake 0.34s; }
+@keyframes lock-shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-6px); }
+  40%, 60% { transform: translateX(6px); }
+}
+.lock-msg { min-height: 18px; margin-bottom: 8px; font-size: 12px; color: var(--bad); }
+.lock-pad {
+  display: grid; grid-template-columns: repeat(3, 72px); gap: 12px;
+  justify-content: center; margin: 4px auto 16px;
+}
+.lock-key {
+  width: 72px; height: 60px; border-radius: 16px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  font: 600 22px var(--font); transition: background 0.15s, transform 0.1s;
+}
+.lock-key:active { transform: scale(0.96); background: var(--surface-3); }
+.lock-bio {
+  display: grid; place-items: center;
+  color: var(--brand-ink); background: var(--brand-soft); border-color: var(--brand-soft);
+}
+.lock-bio .icon { width: 26px; height: 26px; }
+.lock-key-ghost { background: transparent; border-color: transparent; cursor: default; pointer-events: none; }
+.lock-key-soft { display: grid; place-items: center; background: var(--surface-2); }
+.lock-key-soft .icon { width: 22px; height: 22px; }
+.lock-alt {
+  border: 0; background: none; padding: 8px; cursor: pointer;
+  color: var(--brand-ink); font: 600 12.5px var(--font);
+}
+.lock-foot { margin: 10px 0 0; font-size: 11px; color: var(--muted-2); }
+
+.lock-grid { display: grid; }
+.lock-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 2px; border-bottom: 1px solid var(--line-2);
+}
+.lock-item:last-child { border-bottom: 0; padding-bottom: 6px; }
+.lock-item-icon {
+  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 11px;
+  display: grid; place-items: center; background: var(--brand-soft); color: var(--brand-ink);
+}
+.lock-item-icon .icon { width: 18px; height: 18px; }
+.lock-item-main { flex: 1 1 auto; min-width: 0; }
+.lock-item-title { font-size: 13px; font-weight: 700; }
+.lock-item-sub { font-size: 12px; line-height: 1.45; color: var(--muted); }
+.lock-item-act { flex: 0 0 auto; }
+.lock-item-act select {
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: 9px; padding: 7px 9px; font: 600 12px var(--font); max-width: 170px;
+}
+.lock-foot-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 14px; border-top: 1px solid var(--line-2);
+}
+.lock-note { font-size: 12px; line-height: 1.5; }
+.pin-field { letter-spacing: 0.5em; font-size: 20px; text-align: center; }
+
+@media (max-width: 560px) {
+  .lock-pad { grid-template-columns: repeat(3, 66px); gap: 10px; }
+  .lock-key { width: 66px; height: 56px; font-size: 21px; }
+  .lock-item { flex-wrap: wrap; row-gap: 8px; }
+  .lock-item-act { width: 100%; padding-left: 50px; }
+  .lock-item-act select { max-width: none; width: 100%; }
+}
+
+
