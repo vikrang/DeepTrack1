@@ -1809,3 +1809,35 @@ body.is-locked { overflow: hidden; }
 }
 
 
+
+/* ============================================================
+   On-screen only — no select / copy / drag / print / cache
+   ============================================================ */
+html, body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input, textarea, select, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+img, svg, canvas { -webkit-user-drag: none; }
+
+/* The OS snapshots this frame for the app switcher, so hide the figures */
+body.is-away #app,
+body.is-away #drawer-root,
+body.is-away #modal-root { filter: blur(22px); }
+
+@media print {
+  body > * { display: none !important; }
+  body::after {
+    content: "Printing is turned off. If you need a copy of your portfolio, use Export on the Import / export page inside DeepTrack.";
+    display: block;
+    padding: 56px 32px;
+    font: 500 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #334155;
+    text-align: center;
+  }
+}

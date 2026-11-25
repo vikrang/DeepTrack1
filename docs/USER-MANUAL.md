@@ -912,6 +912,33 @@ from My profile whenever you like.
 > localhost on the computer). Plain `http://` addresses such as the LAN address still
 > run the app but cannot use the app lock or biometrics.
 
+### Keeping portfolio data on screen only
+
+DeepTrack is built so the numbers can be **read but not carried off** from the browser,
+on phones and computers alike. As soon as the app loads:
+
+- Text can't be selected, copied, dragged or right-clicked, so there is no "copy",
+  "Save image" or "Download link" menu on the portfolio. Typing in form fields still
+  works, including paste.
+- **Print** (Ctrl+P / Cmd+P) and **Save page** (Ctrl+S / Cmd+S) are turned off, and the
+  printed page shows only a short notice. The browser menu's print gives the same result.
+- The data comes from the server with `no-store`, so nothing is kept in the browser's
+  disk cache, and the service worker keeps no offline copy either. Closing the browser
+  (or going offline) leaves no portfolio data behind on the device.
+- Data pages can't be opened on their own: typing or bookmarking a data URL such as
+  `/api/dashboard` in a new tab shows a short message instead of the raw figures.
+- When the app goes to the background, the screen blurs, so the phone's app-switcher
+  preview (the snapshot Android and iOS keep of recent apps) shows no figures. With the
+  app lock set, it also locks according to **Ask again**.
+
+The one deliberate way data leaves DeepTrack is **Export** — see *Import / export →
+Export*. That file is yours to keep, mail or upload as you choose.
+
+> What a web page cannot do: stop someone photographing the screen with another camera,
+> or using the operating system's own screenshot shortcut. Those are controls of the
+> device, not the site. If that matters, keep DeepTrack behind the app lock, and don't
+> hand an unlocked device to someone who shouldn't see the portfolio.
+
 ---
 
 ## 19. Masters: saving demat accounts
@@ -1087,7 +1114,7 @@ may need adjusting — that's in `docs/DEPLOYMENT.md`.
 Double-click `start.bat` in the DeepTrack folder and wait for *DeepTrack running*, then
 press **Retry**. When the server stops, DeepTrack shows that status page instead of a
 remembered old screen, so an out-of-date view can no longer appear. The tiny line at the
-bottom of the sidebar (**Build 2026.11.24c**) tells you which copy is loaded; after an
+bottom of the sidebar (**Build 2026.11.25a**) tells you which copy is loaded; after an
 update it should change. If it doesn't, refresh the page once (Ctrl+F5).
 
 **I forgot my app PIN.**
@@ -1101,6 +1128,15 @@ the PIN still works.
 The lock uses the browser's secure-crypto and biometric APIs, which browsers only expose
 on `https://` pages (or localhost). Use the hosted DeepTrack address to set it up; the
 LAN address keeps working without the lock.
+
+**Can I copy a number, print the page or save it?**
+No — text isn't selectable, right-click and Ctrl+C/Ctrl+P/Ctrl+S are off, and printing
+shows a notice. If you need a copy of the portfolio, click **Export** on the
+**Import / export** page; that Excel file is the one intended way data leaves DeepTrack.
+
+**I opened a data link and it says "can't be opened as a web page".**
+That's deliberate: raw data URLs only answer DeepTrack itself. Go back to the app and use
+its pages, or **Export** for a file.
 
 ---
 

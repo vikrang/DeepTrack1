@@ -86,6 +86,28 @@ def create_app(test_config: dict | None = None) -> Flask:
             "https://apis.google.com; "
             "base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
         )
+        if request.path.startswith("/api/") and not request.path.startswith("/api/logo"):
+            # Portfolio data must never sit in the browser's disk cache.
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            # A JSON endpoint opened in a tab (address bar, bookmark, "open in
+            # new tab") is a plain web download; only the app itself, via fetch,
+            # may read it. File downloads (export, template) are not JSON and
+            # still open normally.
+            if (
+                request.method == "GET"
+                and request.headers.get("Sec-Fetch-Mode") == "navigate"
+                and (response.mimetype or "").startswith("application/json")
+            ):
+                response.status_code = 403
+                response.set_data(
+                    jsonify(
+                        error="Portfolio data can't be opened as a web page. Read it in "
+                        "DeepTrack itself, or use Export on the Import / export page if "
+                        "you need a copy."
+                    ).get_data(as_text=True)
+                )
+                response.mimetype = "application/json"
         return response
 
     @app.errorhandler(413)

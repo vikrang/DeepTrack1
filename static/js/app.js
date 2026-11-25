@@ -1,4 +1,4 @@
-import { icon } from "./icons.js?v=20261124c";
+import { icon } from "./icons.js?v=20261125a";
 
 /* ============================================================
    Utilities
@@ -1199,6 +1199,7 @@ function lockNow() {
 }
 
 function handleVisibilityChange() {
+  document.body.classList.toggle("is-away", document.visibilityState === "hidden");
   if (document.visibilityState === "hidden") {
     if (state.me && !lockView) lockHiddenAt = Date.now();
     return;
@@ -1210,6 +1211,52 @@ function handleVisibilityChange() {
   if (!store || store.autoLock === "never") return;
   const wait = store.autoLock === "immediate" ? 0 : Number(store.autoLock) || 0;
   if (Date.now() - since >= wait) lockNow();
+}
+
+/* ---------- On-screen only ------------------------------------------------
+   The portfolio is meant to be read on screen. Text can't be selected,
+   copied, right-clicked, dragged, printed or saved from the page; the API
+   sends no-store so nothing is cached offline; and the app blurs while it is
+   in the background so the phone's app-switcher thumbnail shows no figures.
+   Export on the Import / export page is the one deliberate way data leaves. */
+
+function typingTarget(el) {
+  if (!(el instanceof Element)) return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
+}
+
+function initPrivacyGuards() {
+  document.addEventListener("contextmenu", (event) => {
+    if (!typingTarget(event.target)) event.preventDefault();
+  }, true);
+  document.addEventListener("selectstart", (event) => {
+    if (!typingTarget(event.target)) event.preventDefault();
+  }, true);
+  document.addEventListener("copy", (event) => {
+    if (!typingTarget(document.activeElement) && !typingTarget(event.target)) event.preventDefault();
+  }, true);
+  document.addEventListener("cut", (event) => {
+    if (!typingTarget(event.target)) event.preventDefault();
+  }, true);
+  document.addEventListener("dragstart", (event) => event.preventDefault(), true);
+  document.addEventListener("keydown", (event) => {
+    if (lockView || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = String(event.key || "").toLowerCase();
+    if (key === "s" || key === "p") {
+      event.preventDefault();
+      toast(
+        key === "s"
+          ? "Saving the page is off — use Export on the Import / export page for a copy."
+          : "Printing is off — use Export on the Import / export page for a copy.",
+        "warn"
+      );
+    } else if (key === "a" && !typingTarget(document.activeElement)) {
+      event.preventDefault();
+    }
+  }, true);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted && state.me && readLock()) lockNow();
+  });
 }
 
 function lockCardHtml() {
@@ -6419,6 +6466,7 @@ function bindGlobalEvents() {
   $("#logout-btn")?.addEventListener("click", () => signOut());
 
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  initPrivacyGuards();
 
   $("#quick-add")?.addEventListener("click", () => openInvestmentModal());
   $("#topbar-user")?.addEventListener("click", () => { location.hash = "#/profile"; });
